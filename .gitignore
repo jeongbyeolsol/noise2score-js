@@ -5,9 +5,10 @@ __pycache__/
 venv/
 
 .ipynb_checkpoints/
+*.pt
 
 experiments/
 logs/
-checkpoints/
+
 samples/
 datasets/

@@ -7,5 +7,5 @@ python train_ardae.py \
   --batch-size 8192 \
   --noise-type gaussian \
   --noise-param 0.1  \
-  --save-dir checkpoints/ardae/test_for_debug \
+  --save-dir checkpoints/ardae/train_for_debug \
   --use-metric \
