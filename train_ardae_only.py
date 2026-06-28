@@ -1,9 +1,30 @@
 import argparse
+import csv
+import json
 import random
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import torch
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    class _TqdmFallback:
+        def __init__(self, iterable, **kwargs):
+            self.iterable = iterable
+
+        def __iter__(self):
+            return iter(self.iterable)
+
+        def set_postfix(self, **kwargs):
+            pass
+
+    def tqdm(iterable, **kwargs):
+        return _TqdmFallback(iterable, **kwargs)
+
+    tqdm.write = print
 
 from data import load_array, make_ardae_dataloaders
 from models.ardae import ARDAE
@@ -54,12 +75,14 @@ def move_batch(batch, device):
     return batch.to(device, non_blocking=True)
 
 
-def train_one_epoch(model, loader, optimizer, device):
+def train_one_epoch(model, loader, optimizer, device, epoch=None):
     model.train()
     total_loss = 0.0
     total_count = 0
 
-    for batch in loader:
+    progress = tqdm(loader, desc=f"train {epoch:04d}" if epoch is not None else "train", leave=False)
+
+    for batch in progress:
         x = move_batch(batch, device)
 
         optimizer.zero_grad(set_to_none=True)
@@ -70,25 +93,53 @@ def train_one_epoch(model, loader, optimizer, device):
         batch_size = x.size(0)
         total_loss += loss.item() * batch_size
         total_count += batch_size
+        progress.set_postfix(loss=total_loss / max(total_count, 1))
 
     return total_loss / max(total_count, 1)
 
 
 @torch.no_grad()
-def evaluate(model, loader, device):
+def evaluate(model, loader, device, epoch=None):
     model.eval()
     total_loss = 0.0
     total_count = 0
 
-    for batch in loader:
+    progress = tqdm(loader, desc=f"valid {epoch:04d}" if epoch is not None else "valid", leave=False)
+
+    for batch in progress:
         x = move_batch(batch, device)
         _, loss = model(x)
 
         batch_size = x.size(0)
         total_loss += loss.item() * batch_size
         total_count += batch_size
+        progress.set_postfix(loss=total_loss / max(total_count, 1))
 
     return total_loss / max(total_count, 1)
+
+
+def make_unique_save_dir(base_dir):
+    base_dir = Path(base_dir)
+    if not base_dir.exists():
+        return base_dir
+
+    for index in range(1, 10000):
+        candidate = base_dir.with_name(f"{base_dir.name}_{index:03d}")
+        if not candidate.exists():
+            return candidate
+
+    raise RuntimeError(f"Could not find an unused save directory for {base_dir}")
+
+
+def log_message(message, log_path):
+    tqdm.write(message)
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(message + "\n")
+
+
+def save_config(path, args):
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(vars(args), f, indent=2, sort_keys=True)
 
 
 def save_checkpoint(path, model, optimizer, epoch, train_loss, val_loss, args):
@@ -114,9 +165,26 @@ def main():
         raise ValueError("--val-ratio must be in [0, 1).")
 
     device = torch.device(args.device)
-    save_dir = Path(args.save_dir)
+    requested_save_dir = Path(args.save_dir)
+    save_dir = make_unique_save_dir(requested_save_dir)
+    save_dir.mkdir(parents=True, exist_ok=False)
+
+    args.requested_save_dir = str(requested_save_dir)
+    args.save_dir = str(save_dir)
+    args.run_started_at = datetime.now().isoformat(timespec="seconds")
+
+    log_path = save_dir / "train.log"
+    metrics_path = save_dir / "metrics.csv"
+    save_config(save_dir / "config.json", args)
+
+    log_message(f"save_dir: {save_dir}", log_path)
+    if save_dir != requested_save_dir:
+        log_message(f"requested_save_dir already existed; using: {save_dir}", log_path)
+    log_message(f"device: {device}", log_path)
 
     raw_data = load_array(args.data, key=args.key)
+    log_message(f"data: {args.data}", log_path)
+    log_message(f"raw_data_shape: {tuple(raw_data.shape)}", log_path)
     train_loader, val_loader = make_ardae_dataloaders(
         data=raw_data,
         input_dim=args.input_dim,
@@ -143,9 +211,18 @@ def main():
     best_val_loss = float("inf")
     best_epoch = 0
 
-    for epoch in range(1, args.epochs + 1):
-        train_loss = train_one_epoch(model, train_loader, optimizer, device)
-        val_loss = evaluate(model, val_loader, device) if len(val_loader.dataset) > 0 else train_loss
+    with metrics_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["epoch", "train_loss", "val_loss", "best_val_loss", "best_epoch"],
+        )
+        writer.writeheader()
+
+    epoch_progress = tqdm(range(1, args.epochs + 1), desc="epochs")
+
+    for epoch in epoch_progress:
+        train_loss = train_one_epoch(model, train_loader, optimizer, device, epoch=epoch)
+        val_loss = evaluate(model, val_loader, device, epoch=epoch) if len(val_loader.dataset) > 0 else train_loss
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -155,16 +232,40 @@ def main():
         if args.save_every > 0 and epoch % args.save_every == 0:
             save_checkpoint(save_dir / f"epoch_{epoch:04d}.pt", model, optimizer, epoch, train_loss, val_loss, args)
 
+        epoch_progress.set_postfix(
+            train_loss=train_loss,
+            val_loss=val_loss,
+            best_val=best_val_loss,
+            best_epoch=best_epoch,
+        )
+
+        with metrics_path.open("a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=["epoch", "train_loss", "val_loss", "best_val_loss", "best_epoch"],
+            )
+            writer.writerow(
+                {
+                    "epoch": epoch,
+                    "train_loss": train_loss,
+                    "val_loss": val_loss,
+                    "best_val_loss": best_val_loss,
+                    "best_epoch": best_epoch,
+                }
+            )
+
         if epoch == 1 or epoch % args.log_every == 0 or epoch == args.epochs:
-            print(
+            log_message(
                 f"epoch {epoch:04d}/{args.epochs:04d} "
                 f"train_loss={train_loss:.6f} val_loss={val_loss:.6f} "
-                f"best_val={best_val_loss:.6f}@{best_epoch:04d}"
+                f"best_val={best_val_loss:.6f}@{best_epoch:04d}",
+                log_path,
             )
 
     save_checkpoint(save_dir / "last.pt", model, optimizer, args.epochs, train_loss, val_loss, args)
-    print(f"saved last checkpoint: {save_dir / 'last.pt'}")
-    print(f"saved best checkpoint: {save_dir / 'best.pt'}")
+    log_message(f"saved last checkpoint: {save_dir / 'last.pt'}", log_path)
+    log_message(f"saved best checkpoint: {save_dir / 'best.pt'}", log_path)
+    log_message(f"saved metrics: {metrics_path}", log_path)
 
 
 if __name__ == "__main__":
