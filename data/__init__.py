@@ -1,1 +1,1 @@
-from noise import add_gamma_noise, add_gaussian_noise, add_poisson_noise
+from .noise import add_gamma_noise, add_gaussian_noise, add_poisson_noise
