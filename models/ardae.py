@@ -26,6 +26,35 @@ class ARDAE(nn.Module):
 
         self.main = MLP(input_dim+1, h_dim, input_dim, use_nonlinearity_output=False, num_hidden_layers=num_hidden_layers, nonlinearity=nonlinearity)
 
+    def _prepare_noise_param(self, input, noise_param, default):
+        batch_size = input.size(0)
+
+        if noise_param is None:
+            noise_param = input.new_full((batch_size, 1), default)
+        elif not torch.is_tensor(noise_param):
+            noise_param = input.new_full((batch_size, 1), float(noise_param))
+        else:
+            noise_param = noise_param.to(device=input.device, dtype=input.dtype)
+            if noise_param.ndim == 0:
+                noise_param = noise_param.view(1, 1).expand(batch_size, 1)
+            elif noise_param.ndim == 1:
+                if noise_param.numel() == 1:
+                    noise_param = noise_param.view(1, 1).expand(batch_size, 1)
+                else:
+                    noise_param = noise_param.view(batch_size, 1)
+            elif noise_param.ndim == 2:
+                if noise_param.shape == (1, 1):
+                    noise_param = noise_param.expand(batch_size, 1)
+                elif noise_param.shape != (batch_size, 1):
+                    raise ValueError(
+                        f"noise_param must have shape [], [1], [{batch_size}], [1, 1], "
+                        f"or [{batch_size}, 1], got {tuple(noise_param.shape)}"
+                    )
+            else:
+                raise ValueError(f"noise_param must be scalar, 1D, or 2D, got {noise_param.ndim}D")
+
+        return noise_param
+
     def add_noise(self, input, noise_param=None):
         noise_param = self.noise_param if noise_param is None else noise_param
 
@@ -74,19 +103,8 @@ class ARDAE(nn.Module):
 
     def forward(self, input, noise_param=None):
         # init
-        batch_size = input.size(0)
         input = input.view(-1, self.input_dim)
-        
-        if noise_param is None:
-            noise_param = input.new_full((batch_size, 1), self.noise_param)
-        elif not torch.is_tensor(noise_param):
-            noise_param = input.new_full((batch_size, 1), float(noise_param))
-        else:
-            noise_param = noise_param.to(device=input.device, dtype=input.dtype)
-            if noise_param.ndim == 0:
-                noise_param = noise_param.view(1, 1).expand(batch_size, 1)
-            elif noise_param.ndim == 1:
-                noise_param = noise_param.view(batch_size, 1)
+        noise_param = self._prepare_noise_param(input, noise_param, self.noise_param)
 
         # add noise
         x_bar, eps = self.add_noise(input, noise_param)
@@ -110,12 +128,8 @@ class ARDAE(nn.Module):
         return glogprob, loss
 
     def glogprob(self, input, noise_param=None):
-        batch_size = input.size(0)
         input = input.view(-1, self.input_dim)
-        if noise_param is None:
-            noise_param = input.new_zeros(batch_size, 1)
-        else:
-            assert torch.is_tensor(noise_param)
+        noise_param = self._prepare_noise_param(input, noise_param, 0.0)
 
         # concat
         h = torch.cat([input, noise_param], dim=1)
