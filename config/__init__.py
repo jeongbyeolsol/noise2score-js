@@ -1,1 +1,1 @@
-from config import ARDAEConfig
+from .config import ARDAEConfig

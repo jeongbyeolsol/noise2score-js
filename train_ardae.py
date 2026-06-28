@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from config import ARDAEConfig
-from utils import make_unique_save_dir, log_message, save_config, save_checkpoint
+from utils import make_unique_save_dir, log_message, save_config
 
 
 SCORE_METRIC_KEYS = [
@@ -122,6 +122,7 @@ def average_metric_sums(metric_sums, metric_counts):
 
 
 def make_noise(x, sigma_min=0.001, sigma_max=0.5, use_log_scale=True):
+    
     if use_log_scale:
         log_sigma_min = torch.log(torch.tensor(sigma_min, device=x.device, dtype=x.dtype))
         log_sigma_max = torch.log(torch.tensor(sigma_max, device=x.device, dtype=x.dtype))
@@ -154,7 +155,7 @@ def train_one_epoch(model, loader, optimizer, device, config: ARDAEConfig, epoch
         
         noise_param = None
         if config.sigma_min is not None and config.sigma_max is not None:
-            noise_param = make_noise(config.sigma_min, config.sigma_max)
+            noise_param = make_noise(x, sigma_min=config.sigma_min, sigma_max=config.sigma_max)
             
 
         optimizer.zero_grad(set_to_none=True)
@@ -191,7 +192,7 @@ def train_one_epoch(model, loader, optimizer, device, config: ARDAEConfig, epoch
 
 
 @torch.no_grad()
-def evaluate(model, loader, device, epoch=None):
+def evaluate(model, loader, device, config: ARDAEConfig, epoch=None):
     model.eval()
     total_loss = 0.0
     total_count = 0
@@ -202,13 +203,17 @@ def evaluate(model, loader, device, epoch=None):
     progress = tqdm(loader, desc=f"valid {epoch:04d}" if epoch is not None else "valid", leave=False)
 
     for batch in progress:
+            
         x = move_batch(batch, device)
-        _, loss = model(x)
+        noise_param = None
+        if config.sigma_min is not None and config.sigma_max is not None:
+            noise_param = make_noise(x, sigma_min=config.sigma_min, sigma_max=config.sigma_max)
+        _, loss = model(x, noise_param)
 
         batch_size = x.size(0)
         total_loss += loss.item() * batch_size
         total_count += batch_size
-
+        
         if getattr(model, "use_metric", False):
             update_metric_sums(
                 metric_sums=metric_sums,
@@ -246,7 +251,7 @@ def save_checkpoint(path, model, optimizer, epoch, train_loss, val_loss, args):
 
 def main():
     args = parse_args()
-    config = make_config(config)
+    config = make_config()
     set_seed(args.seed)
 
     if not 0.0 <= args.val_ratio < 1.0:
@@ -318,10 +323,10 @@ def main():
     epoch_progress = tqdm(range(1, args.epochs + 1), desc="epochs")
 
     for epoch in epoch_progress:
-        train_loss, train_metrics = train_one_epoch(model, train_loader, optimizer, device, epoch=epoch)
+        train_loss, train_metrics = train_one_epoch(model, train_loader, optimizer, device, epoch=epoch, config=config)
 
         if len(val_loader.dataset) > 0:
-            val_loss, val_metrics = evaluate(model, val_loader, device, epoch=epoch)
+            val_loss, val_metrics = evaluate(model, val_loader, device, epoch=epoch, config=config)
         else:
             val_loss = train_loss
             val_metrics = train_metrics

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from data import add_gamma_noise, add_gaussian_noise, add_poisson_noise
+from utils import add_gamma_noise, add_gaussian_noise, add_poisson_noise
 from models.layers import MLP
 
 
