@@ -11,6 +11,8 @@ class ARDAE(nn.Module):
                  input_dim=2,
                  h_dim=1000,
                  noise_param=0.1,
+                 noise_min=0.001,
+                 noise_max=0.5,
                  num_hidden_layers=1,
                  nonlinearity='tanh',
                  noise_type='gaussian',
@@ -21,6 +23,9 @@ class ARDAE(nn.Module):
         self.input_dim = input_dim
         self.h_dim = h_dim
         self.noise_param = noise_param
+        self.noise_min = noise_min 
+        self.noise_max = noise_max
+            
         self.num_hidden_layers = num_hidden_layers
         self.nonlinearity = nonlinearity
         self.noise_type = noise_type
@@ -30,6 +35,12 @@ class ARDAE(nn.Module):
 
         self.main = MLP(input_dim+1, h_dim, input_dim, use_nonlinearity_output=False, num_hidden_layers=num_hidden_layers, nonlinearity=nonlinearity)
 
+    def _sample_noise(self, input):
+        return torch.empty(input.size(0), 1, device=input.device, dtype=input.dtype).uniform_(
+            self.noise_min,
+            self.noise_max,
+        )
+    
     def _prepare_noise_param(self, input, noise_param, default):
         batch_size = input.size(0)
 

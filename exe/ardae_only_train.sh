@@ -7,7 +7,7 @@ GPU=0
 CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --data "$DATA" \
   --input-dim 64 \
-  --epochs 100 \
+  --epochs 300 \
   --batch-size 8192 \
   --h-dim 1000 \
   --num-hidden-layers 2 \
@@ -20,7 +20,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
 CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --data "$DATA" \
   --input-dim 64 \
-  --epochs 100 \
+  --epochs 300 \
   --batch-size 8192 \
   --h-dim 1000 \
   --num-hidden-layers 2 \
@@ -33,7 +33,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
 CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --data "$DATA" \
   --input-dim 64 \
-  --epochs 100 \
+  --epochs 300 \
   --batch-size 8192 \
   --h-dim 1000 \
   --num-hidden-layers 2 \

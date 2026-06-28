@@ -8,6 +8,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from config import ARDAEConfig
+from utils import make_unique_save_dir, log_message, save_config, save_checkpoint
+
 
 SCORE_METRIC_KEYS = [
     "score_mse",
@@ -72,6 +75,13 @@ def parse_args():
 
     return parser.parse_args()
 
+def make_config():
+    config = ARDAEConfig()
+    config.sigma_min = 0.001
+    config.sigma_max = 0.5
+    config.use_log_scale = True
+    return config
+
 
 def set_seed(seed):
     random.seed(seed)
@@ -111,7 +121,25 @@ def average_metric_sums(metric_sums, metric_counts):
     return averaged
 
 
-def train_one_epoch(model, loader, optimizer, device, epoch=None):
+def make_noise(x, sigma_min=0.001, sigma_max=0.5, use_log_scale=True):
+    if use_log_scale:
+        log_sigma_min = torch.log(torch.tensor(sigma_min, device=x.device, dtype=x.dtype))
+        log_sigma_max = torch.log(torch.tensor(sigma_max, device=x.device, dtype=x.dtype))
+
+        log_sigma = torch.empty(x.size(0), 1, device=x.device, dtype=x.dtype).uniform_(
+            log_sigma_min,
+            log_sigma_max,
+        )
+        noise_param = log_sigma.exp()
+    else:
+        noise_param = torch.empty(x.size(0), 1, device=x.device, dtype=x.dtype).uniform_(
+            sigma_min,
+            sigma_max,
+        )
+
+    return noise_param
+
+def train_one_epoch(model, loader, optimizer, device, config: ARDAEConfig, epoch=None):
     model.train()
     total_loss = 0.0
     total_count = 0
@@ -123,9 +151,16 @@ def train_one_epoch(model, loader, optimizer, device, epoch=None):
 
     for batch in progress:
         x = move_batch(batch, device)
+        
+        noise_param = None
+        if config.sigma_min is not None and config.sigma_max is not None:
+            noise_param = make_noise(config.sigma_min, config.sigma_max)
+            
 
         optimizer.zero_grad(set_to_none=True)
-        _, loss = model(x)
+
+        _, loss = model(x, noise_param)
+
         loss.backward()
         optimizer.step()
 
@@ -195,31 +230,6 @@ def evaluate(model, loader, device, epoch=None):
 
     return total_loss / max(total_count, 1), average_metric_sums(metric_sums, metric_counts)
 
-
-def make_unique_save_dir(base_dir):
-    base_dir = Path(base_dir)
-    if not base_dir.exists():
-        return base_dir
-
-    for index in range(1, 10000):
-        candidate = base_dir.with_name(f"{base_dir.name}_{index:03d}")
-        if not candidate.exists():
-            return candidate
-
-    raise RuntimeError(f"Could not find an unused save directory for {base_dir}")
-
-
-def log_message(message, log_path):
-    tqdm.write(message)
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(message + "\n")
-
-
-def save_config(path, args):
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(vars(args), f, indent=2, sort_keys=True)
-
-
 def save_checkpoint(path, model, optimizer, epoch, train_loss, val_loss, args):
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -234,9 +244,9 @@ def save_checkpoint(path, model, optimizer, epoch, train_loss, val_loss, args):
         path,
     )
 
-
 def main():
     args = parse_args()
+    config = make_config(config)
     set_seed(args.seed)
 
     if not 0.0 <= args.val_ratio < 1.0:
