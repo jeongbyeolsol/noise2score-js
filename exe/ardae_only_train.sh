@@ -4,7 +4,7 @@ set -euo pipefail
 DATA="datasets/processed/bsd400_patches_8x8.npy"
 GPU=0
 
-CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
+CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --data "$DATA" \
   --input-dim 64 \
   --epochs 100 \
@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
   --use-metric \
   > log_gaussian.txt 2>&1;
 
-CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
+CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --data "$DATA" \
   --input-dim 64 \
   --epochs 100 \
@@ -30,7 +30,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
   --use-metric \
   > log_poisson.txt 2>&1;
 
-CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
+CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --data "$DATA" \
   --input-dim 64 \
   --epochs 100 \

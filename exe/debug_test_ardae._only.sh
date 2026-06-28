@@ -1,6 +1,6 @@
 set -euo pipefail
 
-python train_ardae_only.py \
+python train_ardae.py \
   --data datasets/processed/bsd400_patches_8x8.npy \
   --input-dim 64 \
   --epochs 10 \
