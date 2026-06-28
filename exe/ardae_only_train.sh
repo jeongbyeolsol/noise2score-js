@@ -14,6 +14,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
   --noise-type gaussian \
   --noise-param 0.1 \
   --save-dir checkpoints/ardae/gaussian \
+  --use-metric \
   > log_gaussian.txt 2>&1;
 
 CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
@@ -26,6 +27,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
   --noise-type poisson \
   --noise-param 30.0 \
   --save-dir checkpoints/ardae/poisson \
+  --use-metric \
   > log_poisson.txt 2>&1;
 
 CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
@@ -38,4 +40,5 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae_only.py \
   --noise-type gamma \
   --noise-param 2.0 \
   --save-dir checkpoints/ardae/gamma \
+  --use-metric \
   > log_gamma.txt 2>&1;
