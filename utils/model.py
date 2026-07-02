@@ -7,21 +7,25 @@ def softplus(x):
     return torch.log(torch.exp(x) + 1)
 
 
+class CSoftplus(nn.Module):
+    def forward(self, x):
+        return softplus(x)
+
+
 def get_nonlinear_func(nonlinearity_type='silu'):
+    """MLP와 ConvBlock 양쪽에서 쓸 수 있는 activation module을 반환한다."""
     if nonlinearity_type == 'relu':
-        return F.relu
+        return nn.ReLU(inplace=True)
     elif nonlinearity_type == 'elu':
-        return F.elu
+        return nn.ELU(inplace=True)
     elif nonlinearity_type == 'tanh':
-        return torch.tanh
+        return nn.Tanh()
     elif nonlinearity_type == 'softplus':
-        return F.softplus
+        return nn.Softplus()
     elif nonlinearity_type == 'csoftplus':
-        return softplus
+        return CSoftplus()
     elif nonlinearity_type == 'leaky_relu':
-        def leaky_relu(input):
-            return F.leaky_relu(input, negative_slope=0.2)
-        return leaky_relu
+        return nn.LeakyReLU(negative_slope=0.2, inplace=True)
     elif nonlinearity_type == "silu" or nonlinearity_type == "swish":
         return nn.SiLU(inplace=True)
     else:

@@ -69,17 +69,27 @@ def parse_args():
     parser.add_argument("--noise-param", type=float, default=0.1)
 
     parser.add_argument("--save-dir", type=str, default="checkpoints/ardae")
-    parser.add_argument("--save-every", type=int, default=0, help="Save periodic checkpoints. 0 disables it.")
+    parser.add_argument("--save-every-best", action="store_true", help="Save periodic checkpoints.")
     parser.add_argument("--log-every", type=int, default=1)
     parser.add_argument("--use-metric", action="store_true", help="Log score NMSE/cosine/correlation metrics.")
 
+    parser.add_argument("--backbone", type=str, default="mlp", choices=["mlp", "unet"], help="Score network backbone.")
+    parser.add_argument("--image-shape", type=int, nargs="+", default=None, help="UNet image shape: C H W or H W. Example: --image-shape 1 40 40")
+    parser.add_argument("--base-channels", type=int, default=64, help="UNet base channel count.")
+    parser.add_argument("--channel-mults", type=str, default="1,2,4,8", help="Comma-separated UNet channel multipliers.")
+    parser.add_argument("--no-norm", action="store_true", help="Disable GroupNorm in UNet blocks.")
+
+    parser.add_argument("--sigma-min", type=float, default=0.001, help="Minimum ARDAE training noise level.")
+    parser.add_argument("--sigma-max", type=float, default=0.5, help="Maximum ARDAE training noise level.")
+    parser.add_argument("--linear-sigma", action="store_true", help="Sample noise levels uniformly in linear scale instead of log scale.")
+
     return parser.parse_args()
 
-def make_config():
+def make_config(args):
     config = ARDAEConfig()
-    config.sigma_min = 0.001
-    config.sigma_max = 0.5
-    config.use_log_scale = True
+    config.sigma_min = args.sigma_min
+    config.sigma_max = args.sigma_max
+    config.use_log_scale = not args.linear_sigma
     return config
 
 
@@ -89,6 +99,47 @@ def set_seed(seed):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def parse_channel_mults(text):
+    return tuple(int(v.strip()) for v in text.split(",") if v.strip())
+
+
+def normalize_image_shape_arg(image_shape):
+    if image_shape is None:
+        return None
+    image_shape = tuple(int(v) for v in image_shape)
+    if len(image_shape) == 2:
+        return (1, *image_shape)
+    if len(image_shape) == 3:
+        return image_shape
+    raise ValueError("--image-shape must be H W or C H W")
+
+
+def infer_unet_image_shape(raw_data, input_dim, image_shape_arg):
+    image_shape = normalize_image_shape_arg(image_shape_arg)
+    if image_shape is not None:
+        return image_shape
+
+    if raw_data.ndim == 4:
+        # Prefer NCHW. If data is NHWC with a small channel count, convert in dataset preprocessing.
+        if raw_data.shape[1] in (1, 3):
+            return tuple(int(v) for v in raw_data.shape[1:])
+        if raw_data.shape[-1] in (1, 3):
+            return (int(raw_data.shape[-1]), int(raw_data.shape[1]), int(raw_data.shape[2]))
+
+    if raw_data.ndim == 3:
+        return (1, int(raw_data.shape[1]), int(raw_data.shape[2]))
+
+    if input_dim is not None:
+        side = int(round(float(input_dim) ** 0.5))
+        if side * side == int(input_dim):
+            return (1, side, side)
+
+    raise ValueError(
+        "Could not infer UNet image shape. Pass --image-shape C H W, "
+        "e.g. --image-shape 1 40 40."
+    )
 
 
 def move_batch(batch, device):
@@ -155,7 +206,12 @@ def train_one_epoch(model, loader, optimizer, device, config: ARDAEConfig, epoch
         
         noise_param = None
         if config.sigma_min is not None and config.sigma_max is not None:
-            noise_param = make_noise(x, sigma_min=config.sigma_min, sigma_max=config.sigma_max)
+            noise_param = make_noise(
+                x,
+                sigma_min=config.sigma_min,
+                sigma_max=config.sigma_max,
+                use_log_scale=config.use_log_scale,
+            )
             
 
         optimizer.zero_grad(set_to_none=True)
@@ -207,7 +263,12 @@ def evaluate(model, loader, device, config: ARDAEConfig, epoch=None):
         x = move_batch(batch, device)
         noise_param = None
         if config.sigma_min is not None and config.sigma_max is not None:
-            noise_param = make_noise(x, sigma_min=config.sigma_min, sigma_max=config.sigma_max)
+            noise_param = make_noise(
+                x,
+                sigma_min=config.sigma_min,
+                sigma_max=config.sigma_max,
+                use_log_scale=config.use_log_scale,
+            )
         _, loss = model(x, noise_param)
 
         batch_size = x.size(0)
@@ -251,7 +312,7 @@ def save_checkpoint(path, model, optimizer, epoch, train_loss, val_loss, args):
 
 def main():
     args = parse_args()
-    config = make_config()
+    config = make_config(args)
     set_seed(args.seed)
 
     if not 0.0 <= args.val_ratio < 1.0:
@@ -268,6 +329,7 @@ def main():
 
     log_path = save_dir / "train.log"
     metrics_path = save_dir / "metrics.csv"
+    # image_shape/channel_mults는 raw_data를 본 뒤 확정되므로 아래에서 한 번 더 저장한다.
     save_config(save_dir / "config.json", args)
 
     log_message(f"save_dir: {save_dir}", log_path)
@@ -278,13 +340,27 @@ def main():
     raw_data = load_array(args.data, key=args.key)
     log_message(f"data: {args.data}", log_path)
     log_message(f"raw_data_shape: {tuple(raw_data.shape)}", log_path)
+
+    channel_mults = parse_channel_mults(args.channel_mults)
+    image_shape = None
+    flatten = not args.no_flatten
+    if args.backbone == "unet":
+        image_shape = infer_unet_image_shape(raw_data, args.input_dim, args.image_shape)
+        flatten = False
+        args.image_shape = list(image_shape)
+        args.channel_mults = list(channel_mults)
+        log_message(f"unet_image_shape: {image_shape}", log_path)
+
+    save_config(save_dir / "config.json", args)
+
     train_loader, val_loader = make_ardae_dataloaders(
         data=raw_data,
         input_dim=args.input_dim,
         batch_size=args.batch_size,
         val_ratio=args.val_ratio,
         normalize=args.normalize,
-        flatten=not args.no_flatten,
+        flatten=flatten,
+        image_shape=image_shape,
         seed=args.seed,
         num_workers=args.num_workers,
         pin_memory=device.type == "cuda",
@@ -298,6 +374,11 @@ def main():
         nonlinearity=args.nonlinearity,
         noise_type=args.noise_type,
         use_metric=args.use_metric,
+        backbone=args.backbone,
+        image_shape=image_shape,
+        base_channels=args.base_channels,
+        channel_mults=channel_mults,
+        use_norm=not args.no_norm,
     ).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -334,11 +415,12 @@ def main():
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_epoch = epoch
-            best_checkpoint_path = save_dir / f"best_epoch_{epoch:04d}.pt"
+            if args.save_every_best:
+                best_checkpoint_path = save_dir / f"best_epoch_{epoch:04d}.pt"
+            else:
+                best_checkpoint_path = save_dir / "best_model.pt"
             save_checkpoint(best_checkpoint_path, model, optimizer, epoch, train_loss, val_loss, args)
 
-        if args.save_every > 0 and epoch % args.save_every == 0:
-            save_checkpoint(save_dir / f"epoch_{epoch:04d}.pt", model, optimizer, epoch, train_loss, val_loss, args)
 
         epoch_progress.set_postfix(
             train_loss=train_loss,
@@ -384,8 +466,8 @@ def main():
 
     last_checkpoint_path = save_dir / f"last_epoch_{args.epochs:04d}.pt"
     save_checkpoint(last_checkpoint_path, model, optimizer, args.epochs, train_loss, val_loss, args)
-    log_message(f"saved last checkpoint: {save_dir / 'last.pt'}", log_path)
-    log_message(f"saved best checkpoint: {save_dir / 'best.pt'}", log_path)
+    log_message(f"saved last checkpoint: {last_checkpoint_path}", log_path)
+    log_message(f"saved best checkpoint: {best_checkpoint_path}", log_path)
     log_message(f"saved metrics: {metrics_path}", log_path)
 
 

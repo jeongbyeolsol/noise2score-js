@@ -1,46 +1,140 @@
+import math
+from functools import reduce
+from operator import mul
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from utils import add_gamma_noise, add_gaussian_noise, add_poisson_noise
-from models.layers import MLP
+from models.layers import MLP, UNet
 
 
 class ARDAE(nn.Module):
-    def __init__(self,
-                 input_dim=2,
-                 h_dim=1000,
-                 noise_param=0.1,
-                 noise_min=0.001,
-                 noise_max=0.5,
-                 num_hidden_layers=1,
-                 nonlinearity='tanh',
-                 noise_type='gaussian',
-                 use_metric = False
-                 ):
+    def __init__(
+        self,
+        input_dim=2,
+        h_dim=1000,
+        noise_param=0.1,
+        noise_min=0.001,
+        noise_max=0.5,
+        num_hidden_layers=1,
+        nonlinearity='tanh',
+        noise_type='gaussian',
+        use_metric=False,
+        backbone='mlp',
+        image_shape=None,
+        base_channels=64,
+        channel_mults=(1, 2, 4, 8),
+        use_norm=True,
+    ):
         super().__init__()
-        
+
+        self.backbone = backbone.lower()
+        if self.backbone not in {"mlp", "unet"}:
+            raise ValueError(f"backbone must be 'mlp' or 'unet', got {backbone!r}")
+
         self.input_dim = input_dim
         self.h_dim = h_dim
         self.noise_param = noise_param
-        self.noise_min = noise_min 
+        self.noise_min = noise_min
         self.noise_max = noise_max
-            
+
         self.num_hidden_layers = num_hidden_layers
         self.nonlinearity = nonlinearity
         self.noise_type = noise_type
         self.use_metric = use_metric
-        
+
+        self.base_channels = base_channels
+        self.channel_mults = tuple(channel_mults)
+        self.use_norm = use_norm
+        self.image_shape = self._normalize_image_shape(image_shape, input_dim)
+
         self.last_metrics = {}
 
-        self.main = MLP(input_dim+1, h_dim, input_dim, use_nonlinearity_output=False, num_hidden_layers=num_hidden_layers, nonlinearity=nonlinearity)
+        if self.backbone == "mlp":
+            self.main = MLP(
+                input_dim + 1,
+                h_dim,
+                input_dim,
+                use_nonlinearity_output=False,
+                num_hidden_layers=num_hidden_layers,
+                nonlinearity=nonlinearity,
+            )
+        else:
+            in_channels = self.image_shape[0]
+            self.main = UNet(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                base_channels=base_channels,
+                channel_mults=self.channel_mults,
+                nonlinearity=nonlinearity,
+                use_norm=use_norm,
+                use_noise_level=True,
+            )
+
+    def _normalize_image_shape(self, image_shape, input_dim):
+        if self.backbone != "unet":
+            return None
+
+        if image_shape is not None:
+            image_shape = tuple(int(v) for v in image_shape)
+            if len(image_shape) == 2:
+                image_shape = (1, *image_shape)
+            if len(image_shape) != 3:
+                raise ValueError("image_shape must be [H, W] or [C, H, W]")
+            self.input_dim = reduce(mul, image_shape, 1)
+            return image_shape
+
+        if input_dim is None:
+            raise ValueError("UNet backbone needs image_shape or input_dim for square single-channel inference.")
+
+        side = int(math.sqrt(int(input_dim)))
+        if side * side != int(input_dim):
+            raise ValueError(
+                "image_shape was not given and input_dim is not a square number. "
+                "Pass --image-shape C H W, e.g. --image-shape 1 40 40."
+            )
+        return (1, side, side)
+
+    def _format_input(self, input):
+        if self.backbone == "mlp":
+            return input.view(-1, self.input_dim)
+
+        c, h, w = self.image_shape
+
+        if input.dim() == 2:
+            if input.size(1) != c * h * w:
+                raise ValueError(
+                    f"Flat input has dim {input.size(1)}, but image_shape={self.image_shape} "
+                    f"requires {c*h*w}."
+                )
+            return input.view(input.size(0), c, h, w)
+
+        if input.dim() == 3:
+            # [B, H, W] -> [B, 1, H, W]
+            if c != 1:
+                raise ValueError(
+                    f"3D input is interpreted as [B, H, W], but image_shape has C={c}. "
+                    "Use [B, C, H, W] input instead."
+                )
+            if tuple(input.shape[-2:]) != (h, w):
+                raise ValueError(f"Input spatial shape {tuple(input.shape[-2:])} != {(h, w)}")
+            return input.unsqueeze(1)
+
+        if input.dim() == 4:
+            if tuple(input.shape[1:]) != self.image_shape:
+                raise ValueError(f"Input shape {tuple(input.shape[1:])} != image_shape {self.image_shape}")
+            return input
+
+        raise ValueError(f"Unsupported input shape for UNet ARDAE: {tuple(input.shape)}")
 
     def _sample_noise(self, input):
         return torch.empty(input.size(0), 1, device=input.device, dtype=input.dtype).uniform_(
             self.noise_min,
             self.noise_max,
         )
-    
+
     def _prepare_noise_param(self, input, noise_param, default):
         batch_size = input.size(0)
 
@@ -65,11 +159,32 @@ class ARDAE(nn.Module):
                         f"noise_param must have shape [], [1], [{batch_size}], [1, 1], "
                         f"or [{batch_size}, 1], got {tuple(noise_param.shape)}"
                     )
+            elif noise_param.ndim >= 3:
+                noise_param = noise_param.view(batch_size, -1)
+                if noise_param.size(1) != 1:
+                    raise ValueError(
+                        f"noise_param with ndim >= 3 must contain one value per sample, got {tuple(noise_param.shape)}"
+                    )
             else:
                 raise ValueError(f"noise_param must be scalar, 1D, or 2D, got {noise_param.ndim}D")
 
         return noise_param
-    
+
+    def _view_param_like(self, param, target):
+        if not torch.is_tensor(param):
+            param = target.new_tensor(float(param))
+        param = param.to(device=target.device, dtype=target.dtype)
+        if param.ndim == 0:
+            return param
+        batch_size = target.size(0)
+        if param.ndim == 1:
+            param = param.view(batch_size, 1)
+        if target.ndim <= 2:
+            return param
+        if param.ndim == 2:
+            return param.view(batch_size, 1, *([1] * (target.ndim - 2)))
+        return param
+
     def _compute_score_metrics(self, pred_score, target_score):
         """
         pred_score: model output score, glogprob
@@ -80,7 +195,6 @@ class ARDAE(nn.Module):
             pred = pred_score.detach()
             target = target_score.detach()
 
-            # 혹시 inf/nan이 섞였을 때 로그가 터지는 걸 방지
             pred = torch.nan_to_num(pred, nan=0.0, posinf=1e6, neginf=-1e6)
             target = torch.nan_to_num(target, nan=0.0, posinf=1e6, neginf=-1e6)
 
@@ -100,7 +214,6 @@ class ARDAE(nn.Module):
                 eps=1e-8,
             ).mean()
 
-            # Pearson correlation
             pred_centered = pred - pred.mean()
             target_centered = target - target.mean()
 
@@ -131,16 +244,27 @@ class ARDAE(nn.Module):
 
         else:
             raise NotImplementedError(f"Unknown noise_type: {self.noise_type}")
-        
+
+    def glogprob(self, input, noise_param=None):
+        """노이즈가 이미 들어간 관측값 input에서 score/log-density-gradient를 예측한다."""
+        input = self._format_input(input)
+        noise_param = self._prepare_noise_param(input, noise_param, self.noise_param)
+
+        if self.backbone == "mlp":
+            h = torch.cat([input, noise_param], dim=1)
+            return self.main(h)
+
+        return self.main(input, noise_param)
 
     def loss(self, glogprob, input, x_bar, eps, noise_param):
         if self.noise_type == "gaussian":
+            sigma = self._view_param_like(noise_param, glogprob)
             target = -eps
-            pred = noise_param * glogprob
+            pred = sigma * glogprob
             return F.mse_loss(pred, target)
 
         elif self.noise_type == "poisson":
-            peak = noise_param.clamp_min(1e-6)
+            peak = self._view_param_like(noise_param.clamp_min(1e-6), input)
 
             tiny = 1e-6
             x_safe = input.clamp_min(tiny)
@@ -154,27 +278,19 @@ class ARDAE(nn.Module):
                 torch.digamma(count + 1.0)
             )
 
-            # 너무 큰 score target이 학습을 망치지 않도록 완만하게 제한
             target_score = target_score.clamp(-100.0, 100.0)
 
             return F.mse_loss(glogprob, target_score)
 
         elif self.noise_type == "gamma":
-            # Gamma multiplicative noise의 conditional score target을 쓰는 버전
-            # x_bar = input * gamma_noise
-            # gamma_noise ~ Gamma(alpha, alpha)
-            alpha = noise_param.clamp_min(1e-6)
+            alpha = self._view_param_like(noise_param.clamp_min(1e-6), input)
 
-            # torch.finfo(...).eps는 너무 작아서 이미지 score에서는 폭발 방지로 부족함.
-            # 1/255 근처를 lower bound로 두는 편이 더 안전함.
             tiny = 1.0 / 255.0
 
             x_safe = input.clamp_min(tiny)
             y_safe = x_bar.clamp_min(tiny)
 
             target_score = (alpha - 1.0) / y_safe - alpha / x_safe
-
-            # Gamma score는 어두운 픽셀에서 쉽게 폭발하므로 clamp 권장
             target_score = target_score.clamp(-100.0, 100.0)
 
             return F.mse_loss(glogprob, target_score)
@@ -182,20 +298,12 @@ class ARDAE(nn.Module):
             raise NotImplementedError(f"Unknown noise_type: {self.noise_type}")
 
     def forward(self, input, noise_param=None):
-        # init
-        input = input.view(-1, self.input_dim)
+        input = self._format_input(input)
         noise_param = self._prepare_noise_param(input, noise_param, self.noise_param)
 
-        # add noise
         x_bar, eps = self.add_noise(input, noise_param)
+        glogprob = self.glogprob(x_bar, noise_param=noise_param)
 
-        # concat
-        h = torch.cat([x_bar, noise_param], dim=1)
-
-        # predict
-        glogprob = self.main(h)
-
-        ''' get loss '''
         if self.use_metric:
             loss = self.loss_with_metric(
                 glogprob=glogprob,
@@ -213,19 +321,13 @@ class ARDAE(nn.Module):
                 noise_param=noise_param,
             )
 
-        # return
         return glogprob, loss
 
     def loss_with_metric(self, glogprob, input, x_bar, eps, noise_param):
         if self.noise_type == "gaussian":
-            sigma = noise_param.clamp_min(1e-6)
+            sigma = self._view_param_like(noise_param.clamp_min(1e-6), glogprob)
 
-            # Gaussian conditional score target
-            # x_bar = input + sigma * eps
-            # score target = -eps / sigma
             target_score = -eps / sigma
-
-            # 기존 AR-DAE와 동치인 loss
             loss = F.mse_loss(sigma * glogprob, -eps)
 
             self.last_metrics = self._compute_score_metrics(
@@ -236,22 +338,19 @@ class ARDAE(nn.Module):
             return loss
 
         elif self.noise_type == "poisson":
-            peak = noise_param.clamp_min(1e-6)
-
+            peak = self._view_param_like(noise_param.clamp_min(1e-6), input)
             tiny = 1e-6
+
             x_safe = input.clamp_min(tiny)
             y_safe = x_bar.clamp_min(0.0)
 
-            # count = peak * y
             count = peak * y_safe
             rate = peak * x_safe
 
-            # Continuous relaxation of Poisson score wrt y
             target_score = peak * (
-                torch.log(rate.clamp_min(tiny))
-                - torch.digamma(count + 1.0)
+                torch.log(rate.clamp_min(tiny)) -
+                torch.digamma(count + 1.0)
             )
-
             target_score = target_score.clamp(-100.0, 100.0)
 
             loss = F.mse_loss(glogprob, target_score)
@@ -264,17 +363,13 @@ class ARDAE(nn.Module):
             return loss
 
         elif self.noise_type == "gamma":
-            alpha = noise_param.clamp_min(1e-6)
-
+            alpha = self._view_param_like(noise_param.clamp_min(1e-6), input)
             tiny = 1.0 / 255.0
 
             x_safe = input.clamp_min(tiny)
             y_safe = x_bar.clamp_min(tiny)
 
-            # Gamma multiplicative noise score target
-            # y = x * g, g ~ Gamma(alpha, alpha)
             target_score = (alpha - 1.0) / y_safe - alpha / x_safe
-
             target_score = target_score.clamp(-100.0, 100.0)
 
             loss = F.mse_loss(glogprob, target_score)
@@ -288,17 +383,3 @@ class ARDAE(nn.Module):
 
         else:
             raise NotImplementedError(f"Unknown noise_type: {self.noise_type}")
-
-    def glogprob(self, input, noise_param=None):
-        input = input.view(-1, self.input_dim)
-        noise_param = self._prepare_noise_param(input, noise_param, 0.0)
-
-        # concat
-        h = torch.cat([input, noise_param], dim=1)
-
-        # predict
-        glogprob = self.main(h)
-
-        return glogprob
-      
-    

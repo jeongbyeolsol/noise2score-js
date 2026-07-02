@@ -42,8 +42,13 @@ def add_gamma_noise(input, concentration=2.0, clamp=True):
 def _view_param(param, input):
     """
     param을 input에 broadcast 가능한 shape으로 바꾼다.
-    input: [B, D]
-    param: scalar, [B], [B, 1] 가능
+
+    input:
+        [B, D] 또는 [B, C, H, W]
+    param:
+        scalar, [B], [B, 1], [B, 1, 1, 1] 가능
+
+    반환값은 input과 곱셈/나눗셈이 가능한 형태가 된다.
     """
     if not torch.is_tensor(param):
         param = input.new_tensor(float(param))
@@ -53,7 +58,15 @@ def _view_param(param, input):
     if param.ndim == 0:
         return param
 
+    batch_size = input.size(0)
+
     if param.ndim == 1:
-        return param.view(-1, 1)
+        param = param.view(batch_size, 1)
+
+    if input.ndim <= 2:
+        return param
+
+    if param.ndim == 2:
+        return param.view(batch_size, 1, *([1] * (input.ndim - 2)))
 
     return param
