@@ -1,0 +1,16 @@
+save_dir: checkpoints/ardae_unet/gaussian
+device: cuda
+data: datasets/processed/bsd400_patches_40x40.npy
+raw_data_shape: (518400, 1600)
+unet_image_shape: (1, 40, 40)
+epoch 0001/0200 train_loss=0.718729 val_loss=0.635853 best_val=0.635853@0001 train_nmse=0.996760 val_nmse=0.993573 train_cos=0.566860 val_cos=0.611880
+epoch 0002/0200 train_loss=0.603165 val_loss=0.573957 best_val=0.573957@0002 train_nmse=0.990640 val_nmse=0.987461 train_cos=0.622029 val_cos=0.633694
+epoch 0003/0200 train_loss=0.561576 val_loss=0.548851 best_val=0.548851@0003 train_nmse=0.984907 val_nmse=0.982533 train_cos=0.635813 val_cos=0.637696
+epoch 0004/0200 train_loss=0.538064 val_loss=0.528917 best_val=0.528917@0004 train_nmse=0.979700 val_nmse=0.977235 train_cos=0.642959 val_cos=0.646109
+epoch 0005/0200 train_loss=0.523395 val_loss=0.519926 best_val=0.519926@0005 train_nmse=0.975113 val_nmse=0.973002 train_cos=0.646959 val_cos=0.647596
+epoch 0006/0200 train_loss=0.512348 val_loss=0.505994 best_val=0.505994@0006 train_nmse=0.970615 val_nmse=0.968301 train_cos=0.650789 val_cos=0.654005
+epoch 0007/0200 train_loss=0.505822 val_loss=0.502637 best_val=0.502637@0007 train_nmse=0.966602 val_nmse=0.964489 train_cos=0.652210 val_cos=0.653551
+epoch 0008/0200 train_loss=0.499068 val_loss=0.496239 best_val=0.496239@0008 train_nmse=0.962958 val_nmse=0.961494 train_cos=0.654814 val_cos=0.655371
+epoch 0009/0200 train_loss=0.495724 val_loss=0.495489 best_val=0.495489@0009 train_nmse=0.959398 val_nmse=0.957582 train_cos=0.655294 val_cos=0.654564
+epoch 0010/0200 train_loss=0.491423 val_loss=0.488269 best_val=0.488269@0010 train_nmse=0.956084 val_nmse=0.954348 train_cos=0.656717 val_cos=0.658054
+epoch 0011/0200 train_loss=0.487309 val_loss=0.484058 best_val=0.484058@0011 train_nmse=0.952756 val_nmse=0.951959 train_cos=0.658872 val_cos=0.660273
