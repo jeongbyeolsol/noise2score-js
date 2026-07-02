@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATA="datasets/processed/bsd400_patches_40x40.npy"
-GPU=1
-EPOCH=20
+DATA="datasets/processed/bsd400_patches_128x128.npy"
+GPU=0
+EPOCH=1000
 SHAPE=128
 INPUT_DIM=$((SHAPE * SHAPE))  # 산술 연산 수정
-BATCH_SIZE=64
+BATCH_SIZE=256
 
 CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --data "$DATA" \
@@ -24,6 +24,6 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --sigma-max 0.5 \
   --save-dir checkpoints/ardae_unet/gaussian \
   --use-metric \
-  > log_ardae_unet.txt 2>&1
+  > log_ardae_unet.txt # 2>&1
 
 # 실험 결과 가우시안 제외 나빠짐 -> 가우시안 고정
