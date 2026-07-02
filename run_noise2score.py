@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -192,7 +193,7 @@ def main():
     save_score = []
     saved_count = 0
 
-    for (x,) in loader:
+    for (x,) in tqdm(loader, desc="Noise2Score eval", total=len(loader)):
         x = x.to(device)
 
         y = add_observation_noise(
