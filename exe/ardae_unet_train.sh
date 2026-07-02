@@ -3,10 +3,10 @@ set -euo pipefail
 
 DATA="datasets/processed/bsd400_patches_40x40.npy"
 GPU=1
-EPOCH=20
+EPOCH=100
 SHAPE=128
 INPUT_DIM=$((SHAPE * SHAPE))  # 산술 연산 수정
-BATCH_SIZE=64
+BATCH_SIZE=256
 
 CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --data "$DATA" \
