@@ -1,0 +1,8 @@
+python run_noise2score.py \
+  --checkpoint checkpoints/ardae/train_for_debug/best_epoch_0008.pt \
+  --clean-data datasets/processed_test/bsd400_patches_8x8.npy \
+  --input-dim 64 \
+  --noise-type gaussian \
+  --noise-param 0.1 \
+  --score-sigma 0.01 \
+  --output-dir results/n2s_gaussian_test

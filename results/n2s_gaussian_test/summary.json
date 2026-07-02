@@ -1,0 +1,11 @@
+{
+  "noise_type": "gaussian",
+  "noise_param": 0.1,
+  "score_sigma": 0.01,
+  "noisy_mse": 0.009360734072020826,
+  "denoised_mse": 0.007827714475912644,
+  "noisy_psnr": 20.286900924021406,
+  "denoised_psnr": 21.063650240714082,
+  "score_clean_direction_cos": 0.8489649826112915,
+  "improved_mse": true
+}
