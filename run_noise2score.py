@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
@@ -13,7 +14,7 @@ from data import load_array, preprocess_ardae_data
 from models.ardae import ARDAE
 from models.noise2score import Noise2Score
 from utils import add_gaussian_noise, add_poisson_noise, add_gamma_noise
-
+from utils import make_unique_save_dir, log_message, save_config
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -32,6 +33,10 @@ def parse_args():
 
     parser.add_argument("--output-dir", type=str, default="results/noise2score")
 
+    
+    parser.add_argument("--save-output", action="store_true")
+    parser.add_argument("--save-output-dir", type=str, default="results/output")
+    parser.add_argument("--save-output-limit", type=int, default=64)
     return parser.parse_args()
 
 
@@ -82,7 +87,7 @@ def main():
     args = parse_args()
 
     device = torch.device(args.device)
-    output_dir = Path(args.output_dir)
+    output_dir = make_unique_save_dir(Path(args.output_dir))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     clean = load_array(args.clean_data, key=args.key).float()
@@ -120,6 +125,12 @@ def main():
     noisy_mse_sum = 0.0
     denoised_mse_sum = 0.0
     cos_sum = 0.0
+    
+    save_clean = []
+    save_noisy = []
+    save_denoised = []
+    save_score = []
+    saved_count = 0
 
     for (x,) in loader:
         x = x.to(device)
@@ -142,6 +153,17 @@ def main():
             dim=1,
             eps=1e-8,
         ).mean().item()
+        
+        if args.save_output and saved_count < args.save_output_limit:
+            remain = args.save_output_limit - saved_count
+            take = min(remain, x.size(0))
+
+            save_clean.append(x[:take].detach().cpu())
+            save_noisy.append(y[:take].detach().cpu())
+            save_denoised.append(x_hat[:take].detach().cpu())
+            save_score.append(score[:take].detach().cpu())
+
+            saved_count += take
 
         batch_size = x.size(0)
         total_count += batch_size
@@ -166,9 +188,23 @@ def main():
     }
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
+    save_config(output_dir / "summary.json", summary)
+    
+    if args.save_output:
+        save_output_dir = Path(args.save_output_dir)
+        save_output_dir.mkdir(parents=True, exist_ok=True)
 
-    with (output_dir / "summary.json").open("w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
+        clean_np = torch.cat(save_clean, dim=0).numpy()
+        noisy_np = torch.cat(save_noisy, dim=0).numpy()
+        denoised_np = torch.cat(save_denoised, dim=0).numpy()
+        score_np = torch.cat(save_score, dim=0).numpy()
+
+        np.save(save_output_dir / "clean.npy", clean_np)
+        np.save(save_output_dir / "noisy.npy", noisy_np)
+        np.save(save_output_dir / "denoised.npy", denoised_np)
+        np.save(save_output_dir / "score.npy", score_np)
+
+        print(f"[saved] outputs saved to {save_output_dir}")
 
 
 if __name__ == "__main__":

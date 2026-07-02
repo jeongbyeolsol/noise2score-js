@@ -5,4 +5,7 @@ python run_noise2score.py \
   --noise-type gaussian \
   --noise-param 0.1 \
   --score-sigma 0.01 \
-  --output-dir results/n2s_gaussian_test
+  --output-dir results/n2s_gaussian_test \
+  --save-output \
+  --save-output-dir results/n2s_gaussian_test/output \
+  --save-output-limit 64

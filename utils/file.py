@@ -22,5 +22,10 @@ def log_message(message, log_path):
 
 
 def save_config(path, args):
+    if isinstance(args, dict):
+        config_dict = args  
+    else:
+        config_dict = vars(args)
+            
     with path.open("w", encoding="utf-8") as f:
-        json.dump(vars(args), f, indent=2, sort_keys=True)
+        json.dump(config_dict, f, indent=2, sort_keys=True)
