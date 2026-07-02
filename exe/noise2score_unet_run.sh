@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-GPU=1
+GPU=0
 DATA=bsd68
 NOISE=gaussian
 SHAPE=128
@@ -16,7 +16,7 @@ else
 fi
 
 CUDA_VISIBLE_DEVICES=$GPU python run_noise2score.py \
-  --checkpoint "checkpoints/ardae_unet/${NOISE}/best_model.pt" \
+  --checkpoint "checkpoints/ardae_unet/${NOISE}_002/best_model.pt" \
   --clean-data "datasets/${PROCESSED}/${DATA}_patches_${SHAPE}x${SHAPE}.npy" \
   --input-dim $INPUT_DIM \
   --noise-type "$NOISE" \
