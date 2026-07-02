@@ -1,7 +1,7 @@
 {
   "backbone": "unet",
   "base_channels": 32,
-  "batch_size": 512,
+  "batch_size": 2048,
   "channel_mults": [
     1,
     2,
@@ -10,6 +10,7 @@
   "data": "datasets/processed/bsd400_patches_40x40.npy",
   "device": "cuda",
   "epochs": 200,
+  "_comment": "속도가 느려서 11epoch 쯤에 멈추게 함",
   "h_dim": 1000,
   "image_shape": [
     1,
@@ -30,8 +31,8 @@
   "num_hidden_layers": 1,
   "num_workers": 0,
   "requested_save_dir": "checkpoints/ardae_unet/gaussian",
-  "run_started_at": "2026-07-02T18:21:57",
-  "save_dir": "checkpoints/ardae_unet/gaussian_001",
+  "run_started_at": "2026-07-02T17:58:30",
+  "save_dir": "checkpoints/ardae_unet/gaussian",
   "save_every_best": false,
   "seed": 0,
   "sigma_max": 0.5,

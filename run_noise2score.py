@@ -36,7 +36,6 @@ def parse_args():
 
     
     parser.add_argument("--save-output", action="store_true")
-    parser.add_argument("--save-output-dir", type=str, default="results/output")
     parser.add_argument("--save-output-limit", type=int, default=64)
     return parser.parse_args()
 
@@ -254,7 +253,7 @@ def main():
     save_config(output_dir / "summary.json", summary)
     
     if args.save_output:
-        save_output_dir = Path(args.save_output_dir)
+        save_output_dir = output_dir / Path('output')
         save_output_dir.mkdir(parents=True, exist_ok=True)
 
         clean_np = torch.cat(save_clean, dim=0).numpy()

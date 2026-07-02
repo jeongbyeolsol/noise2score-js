@@ -1,0 +1,13 @@
+{
+  "backbone": "mlp",
+  "denoised_mse": 0.0072535426593009,
+  "denoised_psnr": 21.394498304489144,
+  "image_shape": null,
+  "improved_mse": true,
+  "noise_param": 0.1,
+  "noise_type": "gaussian",
+  "noisy_mse": 0.00939044253241531,
+  "noisy_psnr": 20.273139407629177,
+  "score_clean_direction_cos": 0.7418786874588799,
+  "score_sigma": 0.1
+}
