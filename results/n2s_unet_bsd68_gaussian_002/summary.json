@@ -1,0 +1,17 @@
+{
+  "backbone": "unet",
+  "denoised_mse": 0.0012461034860201075,
+  "denoised_psnr": 29.044458890241913,
+  "image_shape": [
+    1,
+    128,
+    128
+  ],
+  "improved_mse": true,
+  "noise_param": 0.1,
+  "noise_type": "gaussian",
+  "noisy_mse": 0.009409528622189824,
+  "noisy_psnr": 20.26432132354835,
+  "score_clean_direction_cos": 0.931897892504513,
+  "score_sigma": 0.1
+}
