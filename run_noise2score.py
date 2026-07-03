@@ -15,7 +15,7 @@ from data import load_array, preprocess_ardae_data
 from models.ardae import ARDAE
 from models.noise2score import Noise2Score
 from utils import add_gaussian_noise, add_poisson_noise, add_gamma_noise
-from utils import make_unique_save_dir, log_message, save_config
+from utils import make_unique_save_dir, log_message, save_config, config_all_from_to
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -38,6 +38,8 @@ def parse_args():
     
     parser.add_argument("--save-output", action="store_true")
     parser.add_argument("--save-output-limit", type=int, default=64)
+    
+    parser.add_argument('--copy-info', action="store_true")
     return parser.parse_args()
 
 
@@ -252,6 +254,26 @@ def main():
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     save_config(output_dir / "summary.json", summary)
+    
+    
+    if args.copy_info:
+        info_dirs = {
+            Path(args.checkpoint).parent,
+            Path(args.clean_data).parent,
+        }
+
+        for info_dir in info_dirs:
+            config_all_from_to(
+                info_dir,
+                output_dir,
+                is_csv=False,
+            )
+            config_all_from_to(
+                info_dir,
+                output_dir,
+                is_csv=True,
+            )
+
     
     if args.save_output:
         save_output_dir = output_dir / Path('output')
