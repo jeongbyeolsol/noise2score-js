@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-GPU=1
+GPU=0
 DATA=bsd68
 NOISE=gaussian
-SHAPE=40
+SHAPE=128
 INPUT_DIM=$((SHAPE * SHAPE)) 
 
 if [ "$DATA" = "bsd400" ]; then
@@ -15,7 +15,7 @@ else
     exit 1
 fi
 
-CUDA_VISIBLE_DEVICES=$GPU python run_noise2score.py \
+CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score.py \
   --checkpoint "checkpoints/ardae/${NOISE}/best_model.pt" \
   --clean-data "datasets/${PROCESSED}/${DATA}_patches_${SHAPE}x${SHAPE}.npy" \
   --input-dim $INPUT_DIM \
