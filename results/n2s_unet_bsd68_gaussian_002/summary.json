@@ -1,7 +1,12 @@
 {
   "backbone": "unet",
+<<<<<<< HEAD
   "denoised_mse": 0.001245381292320934,
   "denoised_psnr": 29.046976623843396,
+=======
+  "denoised_mse": 0.0012461034860201075,
+  "denoised_psnr": 29.044458890241913,
+>>>>>>> main
   "image_shape": [
     1,
     128,
@@ -10,8 +15,14 @@
   "improved_mse": true,
   "noise_param": 0.1,
   "noise_type": "gaussian",
+<<<<<<< HEAD
   "noisy_mse": 0.009407844553578968,
   "noisy_psnr": 20.265098670843287,
   "score_clean_direction_cos": 0.9319228675185132,
+=======
+  "noisy_mse": 0.009409528622189824,
+  "noisy_psnr": 20.26432132354835,
+  "score_clean_direction_cos": 0.931897892504513,
+>>>>>>> main
   "score_sigma": 0.1
 }
