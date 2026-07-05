@@ -1,15 +1,19 @@
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 import argparse
 import csv
-import json
 import random
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import torch
 
 from config import ARDAEConfig
-from utils import make_unique_save_dir, log_message, save_config
+from utils import make_unique_save_dir, log_message, save_config, config_all_from_to
 
 
 SCORE_METRIC_KEYS = [
@@ -330,7 +334,7 @@ def main():
     log_path = save_dir / "train.log"
     metrics_path = save_dir / "metrics.csv"
     # image_shape/channel_mults는 raw_data를 본 뒤 확정되므로 아래에서 한 번 더 저장한다.
-    save_config(save_dir / "config.json", args)
+    save_config(save_dir / "model_config.json", args)
 
     log_message(f"save_dir: {save_dir}", log_path)
     if save_dir != requested_save_dir:
@@ -351,7 +355,12 @@ def main():
         args.channel_mults = list(channel_mults)
         log_message(f"unet_image_shape: {image_shape}", log_path)
 
-    save_config(save_dir / "config.json", args)
+    save_config(save_dir / "model_config.json", args)
+    
+    config_all_from_to(
+        Path(args.data).parent,
+        save_dir,
+    )
 
     train_loader, val_loader = make_ardae_dataloaders(
         data=raw_data,

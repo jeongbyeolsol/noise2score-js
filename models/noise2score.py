@@ -15,25 +15,23 @@ class Noise2Score(nn.Module):
         ardae,
         noise_type="gaussian",
         noise_param=0.1,
-        score_sigma=0.01,
         clamp=True,
     ):
         super().__init__()
         self.ardae = ardae
         self.noise_type = noise_type
         self.noise_param = noise_param
-        self.score_sigma = score_sigma
         self.clamp = clamp
 
     @torch.no_grad()
-    def score(self, y, score_sigma=None):
-        score_sigma = self.score_sigma if score_sigma is None else score_sigma
-        return self.ardae.glogprob(y, noise_param=score_sigma)
+    def score(self, y, noise_param=None):
+        noise_param = self.noise_param if noise_param is None else noise_param
+        return self.ardae.glogprob(y, noise_param=noise_param)
 
     @torch.no_grad()
-    def denoise(self, y, noise_param=None, score_sigma=None):
+    def denoise(self, y, noise_param=None):
         noise_param = self.noise_param if noise_param is None else noise_param
-        score = self.score(y, score_sigma=score_sigma)
+        score = self.score(y, noise_param=noise_param)
 
         if self.noise_type == "gaussian":
             sigma = noise_param

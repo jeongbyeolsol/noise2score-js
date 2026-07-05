@@ -1,9 +1,17 @@
 # run_noise2score.py
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 import argparse
 import json
 import math
+<<<<<<< HEAD:run_noise2score.py
 from pathlib import Path
+=======
+>>>>>>> main:scripts/run_noise2score.py
 from tqdm import tqdm
 
 import numpy as np
@@ -15,7 +23,7 @@ from data import load_array, preprocess_ardae_data
 from models.ardae import ARDAE
 from models.noise2score import Noise2Score
 from utils import add_gaussian_noise, add_poisson_noise, add_gamma_noise
-from utils import make_unique_save_dir, log_message, save_config
+from utils import make_unique_save_dir, log_message, save_config, config_all_from_to
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -31,13 +39,14 @@ def parse_args():
 
     parser.add_argument("--noise-type", type=str, default="gaussian", choices=["gaussian", "poisson", "gamma"])
     parser.add_argument("--noise-param", type=float, default=0.1)
-    parser.add_argument("--score-sigma", type=float, default=0.01)
 
     parser.add_argument("--output-dir", type=str, default="results/noise2score")
 
     
     parser.add_argument("--save-output", action="store_true")
     parser.add_argument("--save-output-limit", type=int, default=64)
+    
+    parser.add_argument('--copy-info', action="store_true")
     return parser.parse_args()
 
 
@@ -179,7 +188,6 @@ def main():
         ardae=ardae,
         noise_type=args.noise_type,
         noise_param=args.noise_param,
-        score_sigma=args.score_sigma,
     )
 
     total_count = 0
@@ -241,7 +249,7 @@ def main():
         "image_shape": list(image_shape) if image_shape is not None else None,
         "noise_type": args.noise_type,
         "noise_param": args.noise_param,
-        "score_sigma": args.score_sigma,
+#        "score_sigma": args.score_sigma,
         "noisy_mse": noisy_mse,
         "denoised_mse": denoised_mse,
         "noisy_psnr": psnr_from_mse(noisy_mse),
@@ -252,6 +260,26 @@ def main():
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     save_config(output_dir / "summary.json", summary)
+    
+    
+    if args.copy_info:
+        info_dirs = {
+            Path(args.checkpoint).parent,
+            Path(args.clean_data).parent,
+        }
+
+        for info_dir in info_dirs:
+            config_all_from_to(
+                info_dir,
+                output_dir,
+                is_csv=False,
+            )
+            config_all_from_to(
+                info_dir,
+                output_dir,
+                is_csv=True,
+            )
+
     
     if args.save_output:
         save_output_dir = output_dir / Path('output')
