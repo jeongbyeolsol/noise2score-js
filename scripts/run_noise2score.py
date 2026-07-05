@@ -35,7 +35,6 @@ def parse_args():
 
     parser.add_argument("--noise-type", type=str, default="gaussian", choices=["gaussian", "poisson", "gamma"])
     parser.add_argument("--noise-param", type=float, default=0.1)
-    parser.add_argument("--score-sigma", type=float, default=0.01)
 
     parser.add_argument("--output-dir", type=str, default="results/noise2score")
 
@@ -185,7 +184,6 @@ def main():
         ardae=ardae,
         noise_type=args.noise_type,
         noise_param=args.noise_param,
-        score_sigma=args.score_sigma,
     )
 
     total_count = 0
@@ -247,7 +245,7 @@ def main():
         "image_shape": list(image_shape) if image_shape is not None else None,
         "noise_type": args.noise_type,
         "noise_param": args.noise_param,
-        "score_sigma": args.score_sigma,
+#        "score_sigma": args.score_sigma,
         "noisy_mse": noisy_mse,
         "denoised_mse": denoised_mse,
         "noisy_psnr": psnr_from_mse(noisy_mse),

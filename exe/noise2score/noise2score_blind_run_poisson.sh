@@ -5,6 +5,7 @@ DATA=bsd68
 NOISE=poisson
 SHAPE=128
 INPUT_DIM=$((SHAPE * SHAPE))
+INDEX="_001"
 
 if [ "$DATA" = "bsd400" ]; then
     PROCESSED=processed_001
@@ -16,14 +17,14 @@ else
 fi
 
 CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score_blind.py \
-  --checkpoint "checkpoints/ardae_unet/${NOISE}/best_model.pt" \
+  --checkpoint "checkpoints/ardae_unet/${NOISE}${INDEX}/best_model.pt" \
   --clean-data "datasets/${PROCESSED}/${DATA}_patches_${SHAPE}x${SHAPE}.npy" \
   --input-dim $INPUT_DIM \
   --batch-size 256 \
   --image-shape 1 $SHAPE $SHAPE \
   --noise-type "$NOISE" \
   --noise-param 0.1 \
-  --candidate-params 0.03,0.05,0.075,0.1,0.125,0.15,0.2 \
+  --candidate-params 30, 50, 80, 100, 120, 150, 180, 200, \
   --score-sigma-mode same \
   --tv-weight 1.0 \
   --data-weight 0.0 \
