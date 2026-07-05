@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATA="datasets/processed/bsd400_patches_40x40.npy"
-GPU=1
-EPOCH=100
+DATA="datasets/processed_001/bsd400_patches_128x128.npy"
+GPU=0
+EPOCH=256
 SHAPE=128
-INPUT_DIM=$((SHAPE * SHAPE))  # 산술 연산 수정
+INPUT_DIM=$((SHAPE * SHAPE)) 
 BATCH_SIZE=256
+NOISE='gaussian'
 
-CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
+CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
   --data "$DATA" \
   --input-dim $INPUT_DIM \
   --epochs $EPOCH \
@@ -18,12 +19,10 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   --base-channels 32 \
   --channel-mults 1,2,4 \
   --nonlinearity silu \
-  --noise-type gaussian \
+  --noise-type $NOISE \
   --noise-param 0.1 \
   --sigma-min 0.001 \
   --sigma-max 0.5 \
-  --save-dir checkpoints/ardae_unet/gaussian \
+  --save-dir checkpoints/ardae_unet/${NOISE} \
   --use-metric \
-  > log_ardae_unet.txt 2>&1
-
-# 실험 결과 가우시안 제외 나빠짐 -> 가우시안 고정
+  > log_ardae_unet.txt # 2>&1  // because of tqdm

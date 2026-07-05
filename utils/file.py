@@ -3,6 +3,7 @@ from tqdm import tqdm
 import json
 import shutil
 from collections import Counter
+import argparse
 
 import numpy as np
 import torch
@@ -28,15 +29,34 @@ def log_message(message, log_path):
 
 
 def save_config(path, args):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
     if isinstance(args, dict):
-        config_dict = args  
+        config_obj = args
+
+    elif isinstance(args, argparse.Namespace):
+        config_obj = vars(args)
+
+    elif isinstance(args, (list, tuple)):
+        config_obj = args
+
+    elif hasattr(args, "__dict__"):
+        config_obj = vars(args)
+
     else:
-        config_dict = vars(args)
-        
-    config_dict = _make_json_serializable(config_dict)
-            
+        config_obj = args
+
+    config_obj = _make_json_serializable(config_obj)
+
     with path.open("w", encoding="utf-8") as f:
-        json.dump(config_dict, f, indent=2, sort_keys=True)
+        json.dump(
+            config_obj,
+            f,
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
 
 
 def _make_json_serializable(obj):

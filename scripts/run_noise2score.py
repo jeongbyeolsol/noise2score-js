@@ -1,9 +1,13 @@
 # run_noise2score.py
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 import argparse
 import json
 import math
-from pathlib import Path
 from tqdm import tqdm
 
 import numpy as np

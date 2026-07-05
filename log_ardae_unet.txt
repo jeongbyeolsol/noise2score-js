@@ -1,0 +1,26 @@
+save_dir: checkpoints/ardae_unet/poisson_001
+requested_save_dir already existed; using: checkpoints/ardae_unet/poisson_001
+device: cuda
+data: datasets/processed_001/bsd400_patches_128x128.npy
+raw_data_shape: (6400, 16384)
+unet_image_shape: (1, 128, 128)
+epoch 0001/0256 train_loss=0.061961 val_loss=0.015355 best_val=0.015355@0001 train_nmse=0.850200 val_nmse=0.217128 train_cos=0.812026 val_cos=0.887192
+epoch 0002/0256 train_loss=0.009951 val_loss=0.005564 best_val=0.005564@0002 train_nmse=0.139465 val_nmse=0.092168 train_cos=0.878729 val_cos=0.955172
+epoch 0003/0256 train_loss=0.006942 val_loss=0.006742 best_val=0.005564@0002 train_nmse=0.095071 val_nmse=0.090767 train_cos=0.951630 val_cos=0.716556
+epoch 0004/0256 train_loss=0.005757 val_loss=0.004955 best_val=0.004955@0004 train_nmse=0.079594 val_nmse=0.066673 train_cos=0.936497 val_cos=0.908254
+epoch 0005/0256 train_loss=0.004869 val_loss=0.004275 best_val=0.004275@0005 train_nmse=0.069436 val_nmse=0.060347 train_cos=0.904216 val_cos=0.977423
+epoch 0006/0256 train_loss=0.004176 val_loss=0.004169 best_val=0.004169@0006 train_nmse=0.057855 val_nmse=0.052759 train_cos=0.923223 val_cos=0.818594
+epoch 0007/0256 train_loss=0.003600 val_loss=0.003115 best_val=0.003115@0007 train_nmse=0.050656 val_nmse=0.044995 train_cos=0.955065 val_cos=0.978956
+epoch 0008/0256 train_loss=0.003213 val_loss=0.003561 best_val=0.003115@0007 train_nmse=0.046077 val_nmse=0.044741 train_cos=0.966349 val_cos=0.982881
+epoch 0009/0256 train_loss=0.003304 val_loss=0.003803 best_val=0.003115@0007 train_nmse=0.045345 val_nmse=0.054972 train_cos=0.953260 val_cos=0.757835
+epoch 0010/0256 train_loss=0.003123 val_loss=0.002801 best_val=0.002801@0010 train_nmse=0.044822 val_nmse=0.039592 train_cos=0.951910 val_cos=0.985899
+epoch 0011/0256 train_loss=0.003026 val_loss=0.003058 best_val=0.002801@0010 train_nmse=0.042243 val_nmse=0.039212 train_cos=0.970073 val_cos=0.987314
+epoch 0012/0256 train_loss=0.002823 val_loss=0.002712 best_val=0.002712@0012 train_nmse=0.040650 val_nmse=0.037040 train_cos=0.978664 val_cos=0.963759
+epoch 0013/0256 train_loss=0.002873 val_loss=0.003090 best_val=0.002712@0012 train_nmse=0.039995 val_nmse=0.038295 train_cos=0.978060 val_cos=0.980613
+epoch 0014/0256 train_loss=0.002976 val_loss=0.003317 best_val=0.002712@0012 train_nmse=0.040383 val_nmse=0.041289 train_cos=0.977575 val_cos=0.987815
+epoch 0015/0256 train_loss=0.002800 val_loss=0.002640 best_val=0.002640@0015 train_nmse=0.040736 val_nmse=0.036476 train_cos=0.950426 val_cos=0.988828
+epoch 0016/0256 train_loss=0.002764 val_loss=0.002658 best_val=0.002640@0015 train_nmse=0.038605 val_nmse=0.036584 train_cos=0.981741 val_cos=0.983857
+epoch 0017/0256 train_loss=0.002789 val_loss=0.002246 best_val=0.002246@0017 train_nmse=0.039479 val_nmse=0.033964 train_cos=0.976036 val_cos=0.988045
+epoch 0018/0256 train_loss=0.002622 val_loss=0.003202 best_val=0.002246@0017 train_nmse=0.037460 val_nmse=0.040576 train_cos=0.971634 val_cos=0.987903
+epoch 0019/0256 train_loss=0.002585 val_loss=0.003121 best_val=0.002246@0017 train_nmse=0.036874 val_nmse=0.040521 train_cos=0.983956 val_cos=0.986859
+epoch 0020/0256 train_loss=0.002671 val_loss=0.002621 best_val=0.002246@0017 train_nmse=0.037380 val_nmse=0.036159 train_cos=0.981780 val_cos=0.981165

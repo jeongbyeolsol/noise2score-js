@@ -1,9 +1,14 @@
 # run_noise2score_blind.py
 
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 import argparse
 import json
 import math
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -450,9 +455,9 @@ def main():
     }
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
-    save_config(output_dir / "summary.json", summary)
+    save_config(output_dir / Path("summary.json"), summary)
 
-    save_config(output_dir / "candidate_history.json", candidate_history)
+    save_config(output_dir / Path("candidate_history.json"), candidate_history)
 
     
     if args.copy_info:

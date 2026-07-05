@@ -16,7 +16,7 @@ else
 fi
 
 CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score_blind.py \
-  --checkpoint "checkpoints/ardae_unet/${NOISE}/best_model.pt" \
+  --checkpoint "checkpoints/ardae_unet/${NOISE}_003/best_test_model.pt" \
   --clean-data "datasets/${PROCESSED}/${DATA}_patches_${SHAPE}x${SHAPE}.npy" \
   --input-dim $INPUT_DIM \
   --batch-size 256 \
