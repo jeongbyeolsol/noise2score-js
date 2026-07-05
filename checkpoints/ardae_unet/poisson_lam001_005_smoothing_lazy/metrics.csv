@@ -1,0 +1,1 @@
+epoch,train_loss,val_loss,best_val_loss,best_epoch,train_score_mse,train_score_nmse,train_score_cos,train_score_corr,train_target_energy,train_pred_energy,val_score_mse,val_score_nmse,val_score_cos,val_score_corr,val_target_energy,val_pred_energy

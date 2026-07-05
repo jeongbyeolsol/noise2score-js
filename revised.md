@@ -137,3 +137,70 @@ Also ran small dummy API smoke tests for:
 - Blind denoise compatibility
 - Config copy collision handling
 
+## 9. Lazy Image Patch Loading
+
+Added a memory-safe image patch dataset path for large image collections.
+
+New training options:
+
+```text
+--data-mode image-folder
+--patch-size
+--stride
+--channels
+--max-patches-per-image
+--recursive-images
+```
+
+Instead of precomputing every patch and storing all patches in one giant list or
+`.npy` file, `ImagePatchDataset` stores only patch coordinates. During training,
+`__getitem__` opens the needed image and slices one patch on demand.
+
+Example:
+
+```bash
+python ./scripts/train_ardae.py \
+  --data datasets/DIV2K_train_HR \
+  --data-mode image-folder \
+  --input-dim 49152 \
+  --backbone unet \
+  --image-shape 3 128 128 \
+  --patch-size 128 \
+  --stride 64 \
+  --channels 3 \
+  --max-patches-per-image 512
+```
+
+Updated `exe/ardae_unet/ardae_unet_train_poisson.sh` to use this lazy image
+folder path.
+
+## 10. Faster Streaming Patch Loader
+
+Added a faster image-folder patch loader for training speed.
+
+New options:
+
+```text
+--patch-loader stream
+--persistent-workers
+--prefetch-factor
+```
+
+`--patch-loader map` keeps the older lazy random-access behavior, where each
+patch may reopen/decode an image. This is memory safe but slow.
+
+`--patch-loader stream` opens one image, yields many patches from that decoded
+image, then moves to the next image. This greatly reduces image decoding
+overhead for large PNG/JPEG folders.
+
+Recommended for image-folder training:
+
+```bash
+--patch-loader stream \
+--num-workers 8 \
+--persistent-workers \
+--prefetch-factor 4
+```
+
+`exe/ardae_unet/ardae_unet_train_poisson.sh` now uses the streaming loader by
+default.

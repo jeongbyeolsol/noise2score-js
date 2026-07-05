@@ -24,4 +24,5 @@ CUDA_VISIBLE_DEVICES=$GPU python run_noise2score.py \
   --score-sigma 0.1 \
   --output-dir "results/n2s_unet_${DATA}_${NOISE}" \
   --save-output \
-  --save-output-limit 64
+  --save-output-limit 64 \
+  --copy-info

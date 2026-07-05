@@ -1,10 +1,15 @@
 from .dataset import (
     ARDAEDataset,
+    ImagePatchDataset,
+    StreamingImagePatchDataset,
+    find_image_paths,
     load_ardae_dataset,
     load_array,
     make_ardae_dataloader,
     make_ardae_dataloaders,
     make_ardae_dataset,
+    make_image_patch_dataloaders,
+    make_streaming_image_patch_dataloaders,
     normalize_tensor,
     preprocess_ardae_data,
 )

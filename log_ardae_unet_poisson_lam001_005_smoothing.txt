@@ -1,0 +1,12 @@
+save_dir: checkpoints/ardae_unet/poisson_lam001_005_smoothing_lazy_001
+requested_save_dir already existed; using: checkpoints/ardae_unet/poisson_lam001_005_smoothing_lazy_001
+device: cuda
+data: datasets/DIV2K_train_HR
+num_images: 800
+patch_size: 128
+stride: 64
+unet_image_shape: (3, 128, 128)
+patch_loader: stream
+num_patches: 406604
+num_train_patches: 365840
+num_val_patches: 40764
