@@ -65,6 +65,18 @@ def parse_args():
     # 실제 관측 noisy image를 만들 때 쓰는 true parameter.
     # blind 평가에서는 metric 계산용 synthetic corruption에 필요하다.
     parser.add_argument("--noise-param", type=float, default=0.1)
+    parser.add_argument(
+        "--smoothing",
+        type=float,
+        default=0.0,
+        help="Gaussian smoothing std for non-Gaussian Noise2Score denoising. 0 keeps the closed-form rule.",
+    )
+    parser.add_argument(
+        "--smoothing-samples",
+        type=int,
+        default=8,
+        help="Monte Carlo samples used when --smoothing > 0.",
+    )
 
     # blind parameter candidates
     parser.add_argument(
@@ -212,6 +224,7 @@ def load_ardae_from_checkpoint(path, input_dim, device, clean=None, image_shape_
             default=(1, 2, 4, 8),
         ),
         use_norm=not ckpt_args.get("no_norm", False),
+        use_gaussian_smoothing=ckpt_args.get("use_gaussian_smoothing", False),
     ).to(device)
 
     state_dict = ckpt.get("model_state_dict", ckpt)
@@ -238,8 +251,13 @@ def get_score_sigma(args, candidate_param):
     raise ValueError(f"Unknown score_sigma_mode: {args.score_sigma_mode}")
 
 
-def denoise_from_score(y, score, noise_type, noise_param, clamp=True):
-    if noise_type == "gaussian":
+def denoise_from_score(y, score, noise_type, noise_param, clamp=True, smoothing=0.0):
+    smoothing = float(smoothing or 0.0)
+
+    if smoothing > 0.0 and noise_type != "gaussian":
+        x_hat = y + smoothing ** 2 * score
+
+    elif noise_type == "gaussian":
         sigma = noise_param
         x_hat = y + sigma ** 2 * score
 
@@ -265,15 +283,19 @@ def denoise_from_score(y, score, noise_type, noise_param, clamp=True):
 @torch.no_grad()
 def main():
     args = parse_args()
-    
-    args = parse_args()
 
     if args.score_sigma_mode == "fixed" and args.fixed_score_sigma is None:
         raise ValueError("--score-sigma-mode fixed requires --fixed-score-sigma.")
+    if args.smoothing < 0:
+        raise ValueError("--smoothing must be >= 0.")
+    if args.smoothing > 0 and args.smoothing_samples < 1:
+        raise ValueError("--smoothing-samples must be >= 1 when --smoothing > 0.")
 
     device = torch.device(args.device)
-    output_dir = make_unique_save_dir(Path(args.output_dir))
+    requested_output_dir = Path(args.output_dir)
+    output_dir = make_unique_save_dir(requested_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    save_config(output_dir / "run_config.json", args)
 
     raw_clean = load_array(args.clean_data, key=args.key).float()
 
@@ -363,7 +385,12 @@ def main():
         for idx, param_value in enumerate(params_list):
             score_sigma = get_score_sigma(args, param_value)
 
-            score = n2s.score(y, score_sigma=score_sigma)
+            score = n2s.score(
+                y,
+                score_sigma=score_sigma,
+                smoothing=args.smoothing,
+                smoothing_samples=args.smoothing_samples,
+            )
 
             x_hat = denoise_from_score(
                 y=y,
@@ -371,6 +398,7 @@ def main():
                 noise_type=args.noise_type,
                 noise_param=param_value,
                 clamp=not args.no_clamp,
+                smoothing=args.smoothing,
             )
 
             q = n2s._blind_quality(
@@ -433,6 +461,8 @@ def main():
         # synthetic eval에서 실제로 넣은 노이즈.
         # 실제 blind 상황에서는 알 수 없는 값이지만, 여기서는 평가용으로 기록.
         "true_noise_param_for_eval": args.noise_param,
+        "smoothing": args.smoothing,
+        "smoothing_samples": args.smoothing_samples,
 
         "score_sigma_mode": args.score_sigma_mode,
         "fixed_score_sigma": args.fixed_score_sigma,
@@ -450,6 +480,10 @@ def main():
         "denoised_psnr": psnr_from_mse(denoised_mse),
         "score_clean_direction_cos": score_cos,
         "improved_mse": denoised_mse < noisy_mse,
+        "requested_output_dir": requested_output_dir,
+        "output_dir": output_dir,
+        "checkpoint": Path(args.checkpoint),
+        "clean_data": Path(args.clean_data),
 
         "candidate_history": candidate_history,
     }
@@ -461,22 +495,14 @@ def main():
 
     
     if args.copy_info:
-        info_dirs = {
-            Path(args.checkpoint).parent,
-            Path(args.clean_data).parent,
+        info_sources = {
+            "checkpoint_": Path(args.checkpoint).parent,
+            "data_": Path(args.clean_data).parent,
         }
 
-        for info_dir in info_dirs:
-            config_all_from_to(
-                info_dir,
-                output_dir,
-                is_csv=False,
-            )
-            config_all_from_to(
-                info_dir,
-                output_dir,
-                is_csv=True,
-            )
+        for prefix, info_dir in info_sources.items():
+            config_all_from_to(info_dir, output_dir, prefix=prefix, is_csv=False)
+            config_all_from_to(info_dir, output_dir, prefix=prefix, is_csv=True)
     
     if args.save_output:
         save_output_dir = output_dir / Path("output")
@@ -490,13 +516,19 @@ def main():
 
         noisy_device = noisy_tensor.to(device)
 
-        score = n2s.score(noisy_device, score_sigma=best_score_sigma)
+        score = n2s.score(
+            noisy_device,
+            score_sigma=best_score_sigma,
+            smoothing=args.smoothing,
+            smoothing_samples=args.smoothing_samples,
+        )
         denoised = denoise_from_score(
             y=noisy_device,
             score=score,
             noise_type=args.noise_type,
             noise_param=best_noise_param,
             clamp=not args.no_clamp,
+            smoothing=args.smoothing,
         )
 
         clean_np = clean_tensor.numpy()

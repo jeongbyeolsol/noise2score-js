@@ -86,14 +86,41 @@ def parse_args():
     parser.add_argument("--sigma-min", type=float, default=0.001, help="Minimum ARDAE training noise level.")
     parser.add_argument("--sigma-max", type=float, default=0.5, help="Maximum ARDAE training noise level.")
     parser.add_argument("--linear-sigma", action="store_true", help="Sample noise levels uniformly in linear scale instead of log scale.")
+    parser.add_argument(
+        "--smoothing",
+        nargs="?",
+        const="range",
+        default=None,
+        help=(
+            "Enable original-style Gaussian smoothing for ARDAE training. "
+            "Use without a value to sample sigma from --sigma-min/--sigma-max, "
+            "or pass a positive value for fixed sigma."
+        ),
+    )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.use_gaussian_smoothing = args.smoothing is not None
+    args.smoothing_sigma = None
+
+    if args.smoothing not in (None, "range"):
+        args.smoothing_sigma = float(args.smoothing)
+        if args.smoothing_sigma <= 0:
+            raise ValueError("--smoothing value must be positive.")
+
+    return args
 
 def make_config(args):
     config = ARDAEConfig()
     config.sigma_min = args.sigma_min
     config.sigma_max = args.sigma_max
     config.use_log_scale = not args.linear_sigma
+    config.use_gaussian_smoothing = args.use_gaussian_smoothing
+
+    if args.smoothing_sigma is not None:
+        config.sigma_min = args.smoothing_sigma
+        config.sigma_max = args.smoothing_sigma
+        config.use_log_scale = False
+
     return config
 
 
@@ -177,6 +204,13 @@ def average_metric_sums(metric_sums, metric_counts):
 
 
 def make_noise(x, sigma_min=0.001, sigma_max=0.5, use_log_scale=True):
+    if sigma_min == sigma_max:
+        return torch.full(
+            (x.size(0), 1),
+            float(sigma_min),
+            device=x.device,
+            dtype=x.dtype,
+        )
     
     if use_log_scale:
         log_sigma_min = torch.log(torch.tensor(sigma_min, device=x.device, dtype=x.dtype))
@@ -360,6 +394,7 @@ def main():
     config_all_from_to(
         Path(args.data).parent,
         save_dir,
+        prefix="data_",
     )
 
     train_loader, val_loader = make_ardae_dataloaders(
@@ -388,6 +423,7 @@ def main():
         base_channels=args.base_channels,
         channel_mults=channel_mults,
         use_norm=not args.no_norm,
+        use_gaussian_smoothing=config.use_gaussian_smoothing,
     ).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -475,6 +511,9 @@ def main():
 
     last_checkpoint_path = save_dir / f"last_epoch_{args.epochs:04d}.pt"
     save_checkpoint(last_checkpoint_path, model, optimizer, args.epochs, train_loss, val_loss, args)
+    args.last_checkpoint_path = str(last_checkpoint_path)
+    args.best_checkpoint_path = str(best_checkpoint_path) if best_checkpoint_path is not None else None
+    save_config(save_dir / "model_config.json", args)
     log_message(f"saved last checkpoint: {last_checkpoint_path}", log_path)
     log_message(f"saved best checkpoint: {best_checkpoint_path}", log_path)
     log_message(f"saved metrics: {metrics_path}", log_path)

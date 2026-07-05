@@ -110,7 +110,15 @@ def build_model(checkpoint, cli_args, device):
     noise_type = cli_args.noise_type or get_ckpt_arg(ckpt_args, "noise_type", "gaussian")
     noise_param = cli_args.noise_param
     if noise_param is None:
-        noise_param = float(get_ckpt_arg(ckpt_args, "noise_param", 0.1))
+        smoothing_sigma = get_ckpt_arg(ckpt_args, "smoothing_sigma", None)
+        if smoothing_sigma is not None:
+            noise_param = float(smoothing_sigma)
+        else:
+            noise_param = float(get_ckpt_arg(ckpt_args, "noise_param", 0.1))
+
+    use_gaussian_smoothing = bool(
+        get_ckpt_arg(ckpt_args, "use_gaussian_smoothing", False)
+    )
 
     model = ARDAE(
         input_dim=input_dim,
@@ -120,6 +128,7 @@ def build_model(checkpoint, cli_args, device):
         nonlinearity=nonlinearity,
         noise_type=noise_type,
         use_metric=not cli_args.no_metric,
+        use_gaussian_smoothing=use_gaussian_smoothing,
     ).to(device)
 
     state_dict = checkpoint.get("model_state_dict", checkpoint)
@@ -134,6 +143,7 @@ def build_model(checkpoint, cli_args, device):
         "noise_type": noise_type,
         "noise_param": noise_param,
         "use_metric": not cli_args.no_metric,
+        "use_gaussian_smoothing": use_gaussian_smoothing,
     }
     return model, model_config, ckpt_args
 

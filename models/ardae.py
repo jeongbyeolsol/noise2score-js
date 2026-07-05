@@ -19,14 +19,15 @@ class ARDAE(nn.Module):
         noise_min=0.001,
         noise_max=0.5,
         num_hidden_layers=1,
-        nonlinearity='tanh',
+        nonlinearity='silu',
         noise_type='gaussian',
         use_metric=False,
-        backbone='mlp',
+        backbone='unet',
         image_shape=None,
         base_channels=64,
         channel_mults=(1, 2, 4, 8),
         use_norm=True,
+        use_gaussian_smoothing=False,
     ):
         super().__init__()
 
@@ -44,6 +45,7 @@ class ARDAE(nn.Module):
         self.nonlinearity = nonlinearity
         self.noise_type = noise_type
         self.use_metric = use_metric
+        self.use_gaussian_smoothing = use_gaussian_smoothing
 
         self.base_channels = base_channels
         self.channel_mults = tuple(channel_mults)
@@ -233,7 +235,7 @@ class ARDAE(nn.Module):
     def add_noise(self, input, noise_param=None):
         noise_param = self.noise_param if noise_param is None else noise_param
 
-        if self.noise_type == "gaussian":
+        if self.use_gaussian_smoothing or self.noise_type == "gaussian":
             return add_gaussian_noise(input, std=noise_param)
 
         elif self.noise_type == "poisson":
@@ -257,7 +259,7 @@ class ARDAE(nn.Module):
         return self.main(input, noise_param)
 
     def loss(self, glogprob, input, x_bar, eps, noise_param):
-        if self.noise_type == "gaussian":
+        if self.use_gaussian_smoothing or self.noise_type == "gaussian":
             sigma = self._view_param_like(noise_param, glogprob)
             target = -eps
             pred = sigma * glogprob
@@ -324,7 +326,7 @@ class ARDAE(nn.Module):
         return glogprob, loss
 
     def loss_with_metric(self, glogprob, input, x_bar, eps, noise_param):
-        if self.noise_type == "gaussian":
+        if self.use_gaussian_smoothing or self.noise_type == "gaussian":
             sigma = self._view_param_like(noise_param.clamp_min(1e-6), glogprob)
 
             target_score = -eps / sigma

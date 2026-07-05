@@ -35,6 +35,18 @@ def parse_args():
 
     parser.add_argument("--noise-type", type=str, default="gaussian", choices=["gaussian", "poisson", "gamma"])
     parser.add_argument("--noise-param", type=float, default=0.1)
+    parser.add_argument(
+        "--smoothing",
+        type=float,
+        default=0.0,
+        help="Gaussian smoothing std for non-Gaussian Noise2Score denoising. 0 keeps the closed-form rule.",
+    )
+    parser.add_argument(
+        "--smoothing-samples",
+        type=int,
+        default=8,
+        help="Monte Carlo samples used when --smoothing > 0.",
+    )
 
     parser.add_argument("--output-dir", type=str, default="results/noise2score")
 
@@ -136,6 +148,7 @@ def load_ardae_from_checkpoint(path, input_dim, device, clean=None, image_shape_
         base_channels=ckpt_args.get("base_channels", 64),
         channel_mults=_as_tuple(ckpt_args.get("channel_mults"), default=(1, 2, 4, 8)),
         use_norm=not ckpt_args.get("no_norm", False),
+        use_gaussian_smoothing=ckpt_args.get("use_gaussian_smoothing", False),
     ).to(device)
 
     state_dict = ckpt.get("model_state_dict", ckpt)
@@ -148,10 +161,16 @@ def load_ardae_from_checkpoint(path, input_dim, device, clean=None, image_shape_
 @torch.no_grad()
 def main():
     args = parse_args()
+    if args.smoothing < 0:
+        raise ValueError("--smoothing must be >= 0.")
+    if args.smoothing > 0 and args.smoothing_samples < 1:
+        raise ValueError("--smoothing-samples must be >= 1 when --smoothing > 0.")
 
     device = torch.device(args.device)
-    output_dir = make_unique_save_dir(Path(args.output_dir))
+    requested_output_dir = Path(args.output_dir)
+    output_dir = make_unique_save_dir(requested_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    save_config(output_dir / "run_config.json", args)
 
     raw_clean = load_array(args.clean_data, key=args.key).float()
 
@@ -206,12 +225,20 @@ def main():
             noise_param=args.noise_param,
         )
 
-        x_hat = n2s.denoise(y)
+        x_hat = n2s.denoise(
+            y,
+            smoothing=args.smoothing,
+            smoothing_samples=args.smoothing_samples,
+        )
 
         noisy_mse = F.mse_loss(y, x).item()
         denoised_mse = F.mse_loss(x_hat, x).item()
 
-        score = n2s.score(y)
+        score = n2s.score(
+            y,
+            smoothing=args.smoothing,
+            smoothing_samples=args.smoothing_samples,
+        )
         cos = F.cosine_similarity(
             score.flatten(1),
             (x - y).flatten(1),
@@ -245,6 +272,12 @@ def main():
         "image_shape": list(image_shape) if image_shape is not None else None,
         "noise_type": args.noise_type,
         "noise_param": args.noise_param,
+        "smoothing": args.smoothing,
+        "smoothing_samples": args.smoothing_samples,
+        "requested_output_dir": requested_output_dir,
+        "output_dir": output_dir,
+        "checkpoint": Path(args.checkpoint),
+        "clean_data": Path(args.clean_data),
 #        "score_sigma": args.score_sigma,
         "noisy_mse": noisy_mse,
         "denoised_mse": denoised_mse,
@@ -259,22 +292,14 @@ def main():
     
     
     if args.copy_info:
-        info_dirs = {
-            Path(args.checkpoint).parent,
-            Path(args.clean_data).parent,
+        info_sources = {
+            "checkpoint_": Path(args.checkpoint).parent,
+            "data_": Path(args.clean_data).parent,
         }
 
-        for info_dir in info_dirs:
-            config_all_from_to(
-                info_dir,
-                output_dir,
-                is_csv=False,
-            )
-            config_all_from_to(
-                info_dir,
-                output_dir,
-                is_csv=True,
-            )
+        for prefix, info_dir in info_sources.items():
+            config_all_from_to(info_dir, output_dir, prefix=prefix, is_csv=False)
+            config_all_from_to(info_dir, output_dir, prefix=prefix, is_csv=True)
 
     
     if args.save_output:
