@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DATA="datasets/DIV2K_train_HR"
+DATA="datasets/DIV2K_train_HR_processed"
 GPU=0
-EPOCH=128
+EPOCH=64
 SHAPE=128
 CHANNELS=3
 INPUT_DIM=$((CHANNELS * SHAPE * SHAPE))
-BATCH_SIZE=64
-NUM_WORKERS=8
+BATCH_SIZE=128
+NUM_WORKERS=1
 NOISE="poisson"
 
 CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
@@ -20,9 +20,9 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
   --backbone unet \
   --image-shape $CHANNELS $SHAPE $SHAPE \
   --patch-size $SHAPE \
-  --stride 64 \
+  --stride 128 \
   --channels $CHANNELS \
-  --max-patches-per-image 512 \
+  --max-patches-per-image 128 \
   --patch-loader stream \
   --num-workers $NUM_WORKERS \
   --persistent-workers \
@@ -35,6 +35,7 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
   --smoothing \
   --sigma-min 0.03 \
   --sigma-max 0.22 \
-  --save-dir checkpoints/ardae_unet/poisson_lam001_005_smoothing_lazy \
+  --save-dir checkpoints/ardae_unet/poisson_lam001_005_smoothing \
   --use-metric \
+  --recursive-images \
   > log_ardae_unet_poisson_lam001_005_smoothing.txt

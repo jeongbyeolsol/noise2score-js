@@ -444,6 +444,12 @@ def main():
     flatten = not args.no_flatten
     if args.data_mode == "image-folder":
         image_paths = find_image_paths(args.data, recursive=args.recursive_images)
+        has_npy_paths = any(Path(path).suffix.lower() == ".npy" for path in image_paths)
+        if has_npy_paths and args.patch_loader != "stream":
+            raise ValueError(
+                ".npy image folders require --patch-loader stream. "
+                "The map loader is only for PIL-readable image files."
+            )
         image_shape = infer_image_folder_shape(args)
         flatten = args.backbone != "unet"
         args.image_shape = list(image_shape)

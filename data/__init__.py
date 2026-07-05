@@ -1,7 +1,4 @@
 from .dataset import (
-    ARDAEDataset,
-    ImagePatchDataset,
-    StreamingImagePatchDataset,
     find_image_paths,
     load_ardae_dataset,
     load_array,
@@ -12,4 +9,10 @@ from .dataset import (
     make_streaming_image_patch_dataloaders,
     normalize_tensor,
     preprocess_ardae_data,
+)
+
+from .classes import (
+    ARDAEDataset,
+    ImagePatchDataset,
+    StreamingImagePatchDataset,
 )

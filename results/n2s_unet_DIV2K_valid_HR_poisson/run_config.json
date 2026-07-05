@@ -1,0 +1,17 @@
+{
+  "batch_size": 256,
+  "checkpoint": "checkpoints/ardae_unet/poisson_lam001_005_smoothing/best_model.pt",
+  "clean_data": "datasets/processed_test/DIV2K_valid_HR_patches_128x128.npy",
+  "copy_info": true,
+  "device": "cuda",
+  "image_shape": null,
+  "input_dim": 16384,
+  "key": null,
+  "noise_param": 50.0,
+  "noise_type": "poisson",
+  "output_dir": "results/n2s_unet_DIV2K_valid_HR_poisson",
+  "save_output": true,
+  "save_output_limit": 64,
+  "smoothing": 0.0,
+  "smoothing_samples": 8
+}

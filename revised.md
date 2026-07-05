@@ -204,3 +204,33 @@ Recommended for image-folder training:
 
 `exe/ardae_unet/ardae_unet_train_poisson.sh` now uses the streaming loader by
 default.
+
+## 11. NPY Image Folder Loading
+
+Fixed image-folder training so folders of per-image `.npy` files are discovered.
+
+Example supported layout:
+
+```text
+datasets/DIV2K_train_HR_processed/
+  0001.npy
+  0002.npy
+  ...
+```
+
+Expected `.npy` shapes:
+
+```text
+RGB:       [H, W, 3] or [3, H, W]
+Grayscale: [H, W], [H, W, 1], or [1, H, W]
+```
+
+Use `.npy` folders with:
+
+```bash
+--data-mode image-folder \
+--patch-loader stream
+```
+
+The map loader is intentionally blocked for `.npy` folders because it is the
+PIL image random-access path.
