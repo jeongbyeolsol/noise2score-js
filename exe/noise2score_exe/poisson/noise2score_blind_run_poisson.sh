@@ -34,4 +34,6 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score_blind.py \
   --output-dir "results/n2s_unet_blind_${DATA}_${NOISE}_${INDEX}" \
   --save-output \
   --copy-info \
-  --smoothing 0.1
+  --smoothing 0.1 \
+  --stitch-output \
+  --stitch-format png 
