@@ -10,7 +10,43 @@ from utils import add_gamma_noise, add_gaussian_noise, add_poisson_noise
 from models.layers import MLP, UNet
 
 
+def _with_noise_type(args, kwargs, noise_type):
+    args = list(args)
+    if len(args) > 7:
+        args[7] = noise_type
+    else:
+        kwargs = dict(kwargs)
+        kwargs["noise_type"] = noise_type
+    return tuple(args), kwargs
+
+
+def _get_noise_type_arg(args, kwargs):
+    if len(args) > 7:
+        return args[7]
+    return kwargs.get("noise_type", "gaussian")
+
+
+def _get_gaussian_smoothing_arg(args, kwargs):
+    if len(args) > 14:
+        return args[14]
+    return kwargs.get("use_gaussian_smoothing", False)
+
+
 class ARDAE(nn.Module):
+    _distribution_classes = {}
+
+    def __new__(cls, *args, **kwargs):
+        if cls is ARDAE:
+            noise_type = _get_noise_type_arg(args, kwargs)
+            use_gaussian_smoothing = _get_gaussian_smoothing_arg(args, kwargs)
+            distribution_cls = cls._resolve_distribution_class(
+                noise_type,
+                use_gaussian_smoothing=use_gaussian_smoothing,
+            )
+            instance = super().__new__(distribution_cls)
+            return instance
+        return super().__new__(cls)
+
     def __init__(
         self,
         input_dim=2,
@@ -74,6 +110,16 @@ class ARDAE(nn.Module):
                 use_norm=use_norm,
                 use_noise_level=True,
             )
+
+    @classmethod
+    def _resolve_distribution_class(cls, noise_type, use_gaussian_smoothing=False):
+        if use_gaussian_smoothing:
+            noise_type = "gaussian"
+
+        try:
+            return cls._distribution_classes[noise_type]
+        except KeyError:
+            raise NotImplementedError(f"Unknown noise_type: {noise_type}") from None
 
     def _normalize_image_shape(self, image_shape, input_dim):
         if self.backbone != "unet":
@@ -233,19 +279,7 @@ class ARDAE(nn.Module):
         }
 
     def add_noise(self, input, noise_param=None):
-        noise_param = self.noise_param if noise_param is None else noise_param
-
-        if self.use_gaussian_smoothing or self.noise_type == "gaussian":
-            return add_gaussian_noise(input, std=noise_param)
-
-        elif self.noise_type == "poisson":
-            return add_poisson_noise(input, peak=noise_param)
-
-        elif self.noise_type == "gamma":
-            return add_gamma_noise(input, concentration=noise_param)
-
-        else:
-            raise NotImplementedError(f"Unknown noise_type: {self.noise_type}")
+        raise NotImplementedError
 
     def glogprob(self, input, noise_param=None):
         """노이즈가 이미 들어간 관측값 input에서 score/log-density-gradient를 예측한다."""
@@ -259,45 +293,14 @@ class ARDAE(nn.Module):
         return self.main(input, noise_param)
 
     def loss(self, glogprob, input, x_bar, eps, noise_param):
-        if self.use_gaussian_smoothing or self.noise_type == "gaussian":
-            sigma = self._view_param_like(noise_param, glogprob)
-            target = -eps
-            pred = sigma * glogprob
-            return F.mse_loss(pred, target)
-
-        elif self.noise_type == "poisson":
-            peak = self._view_param_like(noise_param.clamp_min(1e-6), input)
-
-            tiny = 1e-6
-            x_safe = input.clamp_min(tiny)
-            y_safe = x_bar.clamp_min(0.0)
-
-            count = peak * y_safe
-            rate = peak * x_safe
-
-            target_score = peak * (
-                torch.log(rate.clamp_min(tiny)) -
-                torch.digamma(count + 1.0)
-            )
-
-            target_score = target_score.clamp(-100.0, 100.0)
-
-            return F.mse_loss(glogprob, target_score)
-
-        elif self.noise_type == "gamma":
-            alpha = self._view_param_like(noise_param.clamp_min(1e-6), input)
-
-            tiny = 1.0 / 255.0
-
-            x_safe = input.clamp_min(tiny)
-            y_safe = x_bar.clamp_min(tiny)
-
-            target_score = (alpha - 1.0) / y_safe - alpha / x_safe
-            target_score = target_score.clamp(-100.0, 100.0)
-
-            return F.mse_loss(glogprob, target_score)
-        else:
-            raise NotImplementedError(f"Unknown noise_type: {self.noise_type}")
+        loss, _ = self._loss_and_target_score(
+            glogprob=glogprob,
+            input=input,
+            x_bar=x_bar,
+            eps=eps,
+            noise_param=noise_param,
+        )
+        return loss
 
     def forward(self, input, noise_param=None):
         input = self._format_input(input)
@@ -326,62 +329,94 @@ class ARDAE(nn.Module):
         return glogprob, loss
 
     def loss_with_metric(self, glogprob, input, x_bar, eps, noise_param):
-        if self.use_gaussian_smoothing or self.noise_type == "gaussian":
-            sigma = self._view_param_like(noise_param.clamp_min(1e-6), glogprob)
+        loss, target_score = self._loss_and_target_score(
+            glogprob=glogprob,
+            input=input,
+            x_bar=x_bar,
+            eps=eps,
+            noise_param=noise_param,
+        )
 
-            target_score = -eps / sigma
-            loss = F.mse_loss(sigma * glogprob, -eps)
+        self.last_metrics = self._compute_score_metrics(
+            pred_score=glogprob,
+            target_score=target_score,
+        )
 
-            self.last_metrics = self._compute_score_metrics(
-                pred_score=glogprob,
-                target_score=target_score,
-            )
+        return loss
 
-            return loss
+    def _loss_and_target_score(self, glogprob, input, x_bar, eps, noise_param):
+        raise NotImplementedError
 
-        elif self.noise_type == "poisson":
-            peak = self._view_param_like(noise_param.clamp_min(1e-6), input)
-            tiny = 1e-6
 
-            x_safe = input.clamp_min(tiny)
-            y_safe = x_bar.clamp_min(0.0)
+class GaussianARDAE(ARDAE):
+    def __init__(self, *args, **kwargs):
+        args, kwargs = _with_noise_type(args, kwargs, "gaussian")
+        super().__init__(*args, **kwargs)
 
-            count = peak * y_safe
-            rate = peak * x_safe
+    def add_noise(self, input, noise_param=None):
+        noise_param = self.noise_param if noise_param is None else noise_param
+        return add_gaussian_noise(input, std=noise_param)
 
-            target_score = peak * (
-                torch.log(rate.clamp_min(tiny)) -
-                torch.digamma(count + 1.0)
-            )
-            target_score = target_score.clamp(-100.0, 100.0)
+    def _loss_and_target_score(self, glogprob, input, x_bar, eps, noise_param):
+        sigma = self._view_param_like(noise_param, glogprob)
+        safe_sigma = self._view_param_like(noise_param.clamp_min(1e-6), glogprob)
+        target_score = -eps / safe_sigma
+        loss = F.mse_loss(sigma * glogprob, -eps)
+        return loss, target_score
 
-            loss = F.mse_loss(glogprob, target_score)
 
-            self.last_metrics = self._compute_score_metrics(
-                pred_score=glogprob,
-                target_score=target_score,
-            )
+class PoissonARDAE(ARDAE):
+    def __init__(self, *args, **kwargs):
+        args, kwargs = _with_noise_type(args, kwargs, "poisson")
+        super().__init__(*args, **kwargs)
 
-            return loss
+    def add_noise(self, input, noise_param=None):
+        noise_param = self.noise_param if noise_param is None else noise_param
+        return add_poisson_noise(input, peak=noise_param)
 
-        elif self.noise_type == "gamma":
-            alpha = self._view_param_like(noise_param.clamp_min(1e-6), input)
-            tiny = 1.0 / 255.0
+    def _loss_and_target_score(self, glogprob, input, x_bar, eps, noise_param):
+        peak = self._view_param_like(noise_param.clamp_min(1e-6), input)
+        tiny = 1e-6
 
-            x_safe = input.clamp_min(tiny)
-            y_safe = x_bar.clamp_min(tiny)
+        x_safe = input.clamp_min(tiny)
+        y_safe = x_bar.clamp_min(0.0)
 
-            target_score = (alpha - 1.0) / y_safe - alpha / x_safe
-            target_score = target_score.clamp(-100.0, 100.0)
+        count = peak * y_safe
+        rate = peak * x_safe
 
-            loss = F.mse_loss(glogprob, target_score)
+        target_score = peak * (
+            torch.log(rate.clamp_min(tiny)) -
+            torch.digamma(count + 1.0)
+        )
+        target_score = target_score.clamp(-100.0, 100.0)
 
-            self.last_metrics = self._compute_score_metrics(
-                pred_score=glogprob,
-                target_score=target_score,
-            )
+        return F.mse_loss(glogprob, target_score), target_score
 
-            return loss
 
-        else:
-            raise NotImplementedError(f"Unknown noise_type: {self.noise_type}")
+class GammaARDAE(ARDAE):
+    def __init__(self, *args, **kwargs):
+        args, kwargs = _with_noise_type(args, kwargs, "gamma")
+        super().__init__(*args, **kwargs)
+
+    def add_noise(self, input, noise_param=None):
+        noise_param = self.noise_param if noise_param is None else noise_param
+        return add_gamma_noise(input, concentration=noise_param)
+
+    def _loss_and_target_score(self, glogprob, input, x_bar, eps, noise_param):
+        alpha = self._view_param_like(noise_param.clamp_min(1e-6), input)
+        tiny = 1.0 / 255.0
+
+        x_safe = input.clamp_min(tiny)
+        y_safe = x_bar.clamp_min(tiny)
+
+        target_score = (alpha - 1.0) / y_safe - alpha / x_safe
+        target_score = target_score.clamp(-100.0, 100.0)
+
+        return F.mse_loss(glogprob, target_score), target_score
+
+
+ARDAE._distribution_classes = {
+    "gaussian": GaussianARDAE,
+    "poisson": PoissonARDAE,
+    "gamma": GammaARDAE,
+}
