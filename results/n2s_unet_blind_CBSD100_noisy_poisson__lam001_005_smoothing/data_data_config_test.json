@@ -1,0 +1,11 @@
+{
+  "MAX_PATCHES_PER_IMAGE": 1024,
+  "OUT_DIR": "datasets/CBSD100_noisy_processed",
+  "OUT_PATH": "datasets/CBSD100_noisy_processed/CBSD100_noisy_patches_128x128.npy",
+  "PATCH_SIZE": 128,
+  "RAW_DIR": "datasets/CBSD100_noisy",
+  "SEED": 0,
+  "STRIDE": 128,
+  "data_name": "CBSD100_noisy",
+  "max_total_patches": 102400
+}

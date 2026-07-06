@@ -16,7 +16,7 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score_blind.py \
   --clean-data "$CLEAN_DATA" \
   --input-dim $INPUT_DIM \
   --batch-size 128 \
-  --data-mode array \
+  --data-mode image-folder \
   --image-shape $CHANNELS $SHAPE $SHAPE \
   --patch-size $SHAPE \
   --stride 64 \

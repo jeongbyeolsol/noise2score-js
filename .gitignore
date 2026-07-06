@@ -13,6 +13,8 @@ logs/
 samples/
 datasets/
 
+
+*.zip
 *.zst
 *.npy
 *.jpg
