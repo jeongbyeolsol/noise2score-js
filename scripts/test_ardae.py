@@ -36,8 +36,10 @@ from models.ardae import ARDAE
 from utils import (
     SCORE_METRIC_KEYS,
     average_metric_sums,
+    as_tuple,
     make_unique_save_dir,
     move_batch,
+    normalize_image_shape_arg,
     set_seed,
     update_metric_sums,
 )
@@ -84,6 +86,11 @@ def build_model(checkpoint, cli_args, device):
     num_hidden_layers = int(get_ckpt_arg(ckpt_args, "num_hidden_layers", 1))
     nonlinearity = get_ckpt_arg(ckpt_args, "nonlinearity", "tanh")
     noise_type = cli_args.noise_type or get_ckpt_arg(ckpt_args, "noise_type", "gaussian")
+    backbone = get_ckpt_arg(ckpt_args, "backbone", "mlp")
+    image_shape = normalize_image_shape_arg(get_ckpt_arg(ckpt_args, "image_shape", None))
+    base_channels = int(get_ckpt_arg(ckpt_args, "base_channels", 64))
+    channel_mults = as_tuple(get_ckpt_arg(ckpt_args, "channel_mults", None), default=(1, 2, 4, 8))
+    use_norm = not bool(get_ckpt_arg(ckpt_args, "no_norm", False))
     noise_param = cli_args.noise_param
     if noise_param is None:
         smoothing_sigma = get_ckpt_arg(ckpt_args, "smoothing_sigma", None)
@@ -104,6 +111,11 @@ def build_model(checkpoint, cli_args, device):
         nonlinearity=nonlinearity,
         noise_type=noise_type,
         use_metric=not cli_args.no_metric,
+        backbone=backbone,
+        image_shape=image_shape,
+        base_channels=base_channels,
+        channel_mults=channel_mults,
+        use_norm=use_norm,
         use_gaussian_smoothing=use_gaussian_smoothing,
     ).to(device)
 
@@ -119,6 +131,11 @@ def build_model(checkpoint, cli_args, device):
         "noise_type": noise_type,
         "noise_param": noise_param,
         "use_metric": not cli_args.no_metric,
+        "backbone": backbone,
+        "image_shape": image_shape,
+        "base_channels": base_channels,
+        "channel_mults": channel_mults,
+        "use_norm": use_norm,
         "use_gaussian_smoothing": use_gaussian_smoothing,
     }
     return model, model_config, ckpt_args
@@ -192,8 +209,7 @@ def write_metrics_csv(path, summary):
         writer.writerow(row)
 
 
-def main():
-    args = parse_args()
+def run_test(args):
     set_seed(args.seed)
 
     device = torch.device(args.device)
@@ -289,6 +305,17 @@ def main():
     )
     tqdm.write(f"saved summary: {output_dir / 'summary.json'}")
     tqdm.write(f"saved metrics: {output_dir / 'metrics.csv'}")
+
+    return {
+        "output_dir": output_dir,
+        "summary_path": output_dir / "summary.json",
+        "metrics_path": output_dir / "metrics.csv",
+        "summary": summary,
+    }
+
+
+def main():
+    return run_test(parse_args())
 
 
 if __name__ == "__main__":

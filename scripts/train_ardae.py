@@ -116,6 +116,10 @@ def parse_args():
     )
 
     args = parser.parse_args()
+    return prepare_args(args)
+
+
+def prepare_args(args):
     args.use_gaussian_smoothing = args.smoothing is not None
     args.smoothing_sigma = None
 
@@ -319,8 +323,8 @@ def save_checkpoint(path, model, optimizer, epoch, train_loss, val_loss, args):
         path,
     )
 
-def main():
-    args = parse_args()
+def run_training(args):
+    args = prepare_args(args)
     config = make_config(args)
     set_seed(args.seed)
 
@@ -550,6 +554,19 @@ def main():
     log_message(f"saved last checkpoint: {last_checkpoint_path}", log_path)
     log_message(f"saved best checkpoint: {best_checkpoint_path}", log_path)
     log_message(f"saved metrics: {metrics_path}", log_path)
+
+    return {
+        "save_dir": save_dir,
+        "best_checkpoint_path": best_checkpoint_path,
+        "last_checkpoint_path": last_checkpoint_path,
+        "metrics_path": metrics_path,
+        "best_val_loss": best_val_loss,
+        "best_epoch": best_epoch,
+    }
+
+
+def main():
+    return run_training(parse_args())
 
 
 if __name__ == "__main__":

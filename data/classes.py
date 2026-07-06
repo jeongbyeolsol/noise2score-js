@@ -10,7 +10,6 @@ from torch.utils.data import (
     get_worker_info,
     random_split,
 )
-from .dataset import *
 
 
 class ARDAEDataset(Dataset):
@@ -29,6 +28,8 @@ class ARDAEDataset(Dataset):
         image_shape=None,
         dtype=torch.float32,
     ):
+        from .dataset import preprocess_ardae_data
+
         self.x = preprocess_ardae_data(
             data=data,
             input_dim=input_dim,

@@ -7,6 +7,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import argparse
 import json
+from argparse import Namespace
 from tqdm import tqdm
 
 import numpy as np
@@ -21,6 +22,8 @@ from data import (
     preprocess_ardae_data,
 )
 from models.noise2score import Noise2Score
+from scripts.test_ardae import run_test
+from scripts.train_ardae import run_training
 from utils import (
     add_observation_noise,
     config_all_from_to,
@@ -29,13 +32,14 @@ from utils import (
     normalize_image_shape_arg,
     psnr_from_mse,
     save_config,
+    set_seed,
 )
 from utils.checkpoint import load_ardae_from_checkpoint
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--checkpoint", type=str, required=True)
+    parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--clean-data", type=str, required=True)
     parser.add_argument(
         "--data-mode",
@@ -49,6 +53,7 @@ def parse_args():
     parser.add_argument("--input-dim", type=int, required=True)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--image-shape", type=int, nargs="+", default=None, help="Override/restore UNet image shape: C H W or H W.")
     parser.add_argument("--patch-size", type=int, default=None, help="Patch size for --data-mode image-folder.")
@@ -78,9 +83,156 @@ def parse_args():
     
     parser.add_argument("--save-output", action="store_true")
     parser.add_argument("--save-output-limit", type=int, default=64)
+    parser.add_argument(
+        "--stitch-output",
+        action="store_true",
+        help="For --data-mode image-folder, denoise patches and stitch them back into full images.",
+    )
+    parser.add_argument(
+        "--stitch-format",
+        type=str,
+        default="npy",
+        choices=["npy", "png", "both"],
+        help="Format for stitched full-image outputs.",
+    )
     
     parser.add_argument('--copy-info', action="store_true")
+
+    parser.add_argument("--train-ardae", action="store_true", help="Train ARDAE before running Noise2Score.")
+    parser.add_argument("--test-ardae", action="store_true", help="Run ARDAE test before Noise2Score evaluation.")
+    parser.add_argument("--ardae-train-data", type=str, default=None, help="Training data for ARDAE. Defaults to --clean-data.")
+    parser.add_argument("--ardae-train-data-mode", type=str, default=None, choices=["array", "image-folder"])
+    parser.add_argument("--ardae-test-data", type=str, default=None, help="Test data for ARDAE. Defaults to --clean-data.")
+    parser.add_argument("--ardae-max-patches-per-image", type=int, default=None)
+    parser.add_argument("--ardae-save-dir", type=str, default="checkpoints/ardae")
+    parser.add_argument("--ardae-test-output-dir", type=str, default=None)
+    parser.add_argument("--ardae-use-metric", action="store_true")
+    parser.add_argument("--ardae-save-every-best", action="store_true")
+    parser.add_argument("--ardae-epochs", type=int, default=100)
+    parser.add_argument("--ardae-batch-size", type=int, default=None)
+    parser.add_argument("--ardae-lr", type=float, default=1e-3)
+    parser.add_argument("--ardae-weight-decay", type=float, default=0.0)
+    parser.add_argument("--ardae-val-ratio", type=float, default=0.1)
+    parser.add_argument("--ardae-log-every", type=int, default=1)
+    parser.add_argument("--ardae-normalize", type=str, default=None, choices=["standard", "minmax", "zero_one"])
+    parser.add_argument("--ardae-no-flatten", action="store_true")
+    parser.add_argument("--ardae-backbone", type=str, default="mlp", choices=["mlp", "unet"])
+    parser.add_argument("--ardae-h-dim", type=int, default=1000)
+    parser.add_argument("--ardae-num-hidden-layers", type=int, default=1)
+    parser.add_argument("--ardae-nonlinearity", type=str, default="tanh")
+    parser.add_argument("--ardae-base-channels", type=int, default=64)
+    parser.add_argument("--ardae-channel-mults", type=str, default="1,2,4,8")
+    parser.add_argument("--ardae-no-norm", action="store_true")
+    parser.add_argument("--ardae-patch-loader", type=str, default="stream", choices=["stream", "map"])
+    parser.add_argument("--ardae-sigma-min", type=float, default=0.001)
+    parser.add_argument("--ardae-sigma-max", type=float, default=0.5)
+    parser.add_argument("--ardae-linear-sigma", action="store_true")
+    parser.add_argument(
+        "--ardae-smoothing",
+        nargs="?",
+        const="range",
+        default=None,
+        help="ARDAE training smoothing. Use without value for range, or pass a fixed sigma.",
+    )
+    parser.add_argument("--ardae-test-max-batches", type=int, default=0)
+    parser.add_argument("--ardae-test-save-samples", type=int, default=0)
+    parser.add_argument("--ardae-test-no-metric", action="store_true")
     return parser.parse_args()
+
+
+def build_ardae_train_args(args):
+    return Namespace(
+        data=args.ardae_train_data or args.clean_data,
+        data_mode=args.ardae_train_data_mode or args.data_mode,
+        key=args.key,
+        input_dim=args.input_dim,
+        normalize=args.ardae_normalize,
+        no_flatten=args.ardae_no_flatten,
+        epochs=args.ardae_epochs,
+        batch_size=args.ardae_batch_size or args.batch_size,
+        lr=args.ardae_lr,
+        weight_decay=args.ardae_weight_decay,
+        val_ratio=args.ardae_val_ratio,
+        num_workers=args.num_workers,
+        persistent_workers=False,
+        prefetch_factor=2,
+        seed=args.seed,
+        device=args.device,
+        h_dim=args.ardae_h_dim,
+        num_hidden_layers=args.ardae_num_hidden_layers,
+        nonlinearity=args.ardae_nonlinearity,
+        noise_type=args.noise_type,
+        noise_param=args.noise_param,
+        save_dir=args.ardae_save_dir,
+        save_every_best=args.ardae_save_every_best,
+        log_every=args.ardae_log_every,
+        use_metric=args.ardae_use_metric,
+        backbone=args.ardae_backbone,
+        image_shape=args.image_shape,
+        patch_size=args.patch_size,
+        stride=args.stride,
+        channels=args.channels,
+        max_patches_per_image=(
+            args.ardae_max_patches_per_image
+            if args.ardae_max_patches_per_image is not None
+            else args.max_patches_per_image
+        ),
+        recursive_images=args.recursive_images,
+        patch_loader=args.ardae_patch_loader,
+        base_channels=args.ardae_base_channels,
+        channel_mults=args.ardae_channel_mults,
+        no_norm=args.ardae_no_norm,
+        sigma_min=args.ardae_sigma_min,
+        sigma_max=args.ardae_sigma_max,
+        linear_sigma=args.ardae_linear_sigma,
+        smoothing=args.ardae_smoothing,
+    )
+
+
+def build_ardae_test_args(args, checkpoint):
+    return Namespace(
+        checkpoint=str(checkpoint),
+        data=args.ardae_test_data or args.clean_data,
+        key=args.key,
+        input_dim=args.input_dim,
+        normalize=args.ardae_normalize,
+        no_flatten=args.ardae_no_flatten,
+        batch_size=args.ardae_batch_size or args.batch_size,
+        num_workers=args.num_workers,
+        max_batches=args.ardae_test_max_batches,
+        seed=args.seed,
+        device=args.device,
+        noise_param=args.noise_param,
+        noise_type=args.noise_type,
+        no_metric=args.ardae_test_no_metric,
+        output_dir=args.ardae_test_output_dir,
+        save_samples=args.ardae_test_save_samples,
+    )
+
+
+def resolve_checkpoint(args):
+    ardae_train_result = None
+    ardae_test_result = None
+    checkpoint = args.checkpoint
+
+    if args.train_ardae:
+        ardae_train_result = run_training(build_ardae_train_args(args))
+        best_checkpoint = ardae_train_result["best_checkpoint_path"]
+        checkpoint = best_checkpoint or ardae_train_result["last_checkpoint_path"]
+        args.checkpoint = str(checkpoint)
+
+    if checkpoint is None:
+        raise ValueError("--checkpoint is required unless --train-ardae is enabled.")
+
+    if args.test_ardae:
+        if args.data_mode != "array" and args.ardae_test_data is None:
+            raise ValueError(
+                "--test-ardae uses scripts/test_ardae.py, which expects an array file. "
+                "Pass --ardae-test-data or run with --data-mode array."
+            )
+        ardae_test_result = run_test(build_ardae_test_args(args, checkpoint))
+
+    return Path(checkpoint), ardae_train_result, ardae_test_result
 
 
 def infer_stream_shape(args, ckpt_image_shape=None):
@@ -166,7 +318,215 @@ def info_dir_for(path):
     return path if path.is_dir() else path.parent
 
 
-@torch.no_grad()
+def make_stitch_coords(height, width, patch_size, stride):
+    if height < patch_size or width < patch_size:
+        raise ValueError(
+            f"image size {(height, width)} is smaller than patch_size={patch_size}."
+        )
+
+    ys = list(range(0, height - patch_size + 1, stride))
+    xs = list(range(0, width - patch_size + 1, stride))
+    if ys[-1] != height - patch_size:
+        ys.append(height - patch_size)
+    if xs[-1] != width - patch_size:
+        xs.append(width - patch_size)
+
+    return [(y, x) for y in ys for x in xs]
+
+
+def load_clean_image_tensor(path, channels, dtype=torch.float32):
+    path = Path(path)
+    if path.suffix.lower() == ".npy":
+        image = np.load(path)
+        if channels == 1:
+            if image.ndim == 2:
+                tensor = torch.as_tensor(image, dtype=dtype).unsqueeze(0)
+            elif image.ndim == 3 and image.shape[-1] == 1:
+                tensor = torch.as_tensor(image[..., 0], dtype=dtype).unsqueeze(0)
+            elif image.ndim == 3 and image.shape[0] == 1:
+                tensor = torch.as_tensor(image, dtype=dtype)
+            else:
+                raise ValueError(f"Unsupported grayscale npy shape {image.shape} from {path}")
+        else:
+            if image.ndim == 3 and image.shape[-1] == 3:
+                tensor = torch.as_tensor(image, dtype=dtype).permute(2, 0, 1)
+            elif image.ndim == 3 and image.shape[0] == 3:
+                tensor = torch.as_tensor(image, dtype=dtype)
+            else:
+                raise ValueError(f"Unsupported RGB npy shape {image.shape} from {path}")
+
+        if np.issubdtype(image.dtype, np.integer):
+            tensor = tensor / 255.0
+        return tensor.clamp(0, 1).contiguous()
+
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ImportError("Image stitching for non-npy files requires Pillow.") from exc
+
+    mode = "L" if channels == 1 else "RGB"
+    with Image.open(path) as image:
+        array = np.asarray(image.convert(mode)).copy()
+
+    if channels == 1:
+        tensor = torch.as_tensor(array, dtype=dtype).unsqueeze(0)
+    else:
+        tensor = torch.as_tensor(array, dtype=dtype).permute(2, 0, 1)
+
+    return (tensor / 255.0).clamp(0, 1).contiguous()
+
+
+def tensor_to_image_array(tensor):
+    tensor = tensor.detach().cpu().clamp(0, 1)
+    if tensor.dim() != 3:
+        raise ValueError(f"Expected [C,H,W] tensor, got {tuple(tensor.shape)}")
+
+    if tensor.size(0) == 1:
+        array = tensor.squeeze(0).numpy()
+    elif tensor.size(0) == 3:
+        array = tensor.permute(1, 2, 0).numpy()
+    else:
+        raise ValueError(f"Expected 1 or 3 channels, got {tensor.size(0)}")
+
+    return (array * 255.0).round().clip(0, 255).astype(np.uint8)
+
+
+def save_stitched_tensor(tensor, path_base, output_format):
+    path_base.parent.mkdir(parents=True, exist_ok=True)
+
+    if output_format in {"npy", "both"}:
+        np.save(path_base.with_suffix(".npy"), tensor.detach().cpu().numpy())
+
+    if output_format in {"png", "both"}:
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise ImportError("Saving stitched PNG outputs requires Pillow.") from exc
+
+        Image.fromarray(tensor_to_image_array(tensor)).save(path_base.with_suffix(".png"))
+
+
+def stitch_noise2score_outputs(args, n2s, backbone, output_dir, device):
+    if args.data_mode != "image-folder":
+        raise ValueError("--stitch-output requires --data-mode image-folder.")
+    if args.patch_size is None or args.stride is None:
+        raise ValueError("--stitch-output requires resolved --patch-size and --stride.")
+    if args.max_patches_per_image is not None:
+        raise ValueError("--stitch-output needs all patches; omit --max-patches-per-image.")
+
+    image_paths = find_image_paths(args.clean_data, recursive=args.recursive_images)
+    if len(image_paths) == 0:
+        raise ValueError(f"No image/npy files found in {args.clean_data}.")
+
+    stitch_dir = output_dir / "stitched"
+    image_summaries = []
+    noisy_mse_sum = 0.0
+    denoised_mse_sum = 0.0
+    pixel_count_sum = 0
+
+    flatten = backbone != "unet"
+    patch_size = int(args.patch_size)
+    stride = int(args.stride)
+
+    for image_index, image_path in enumerate(tqdm(image_paths, desc="Stitch images")):
+        clean = load_clean_image_tensor(image_path, channels=args.channels)
+        clean = clean.to(device)
+        noisy = add_observation_noise(
+            x=clean.unsqueeze(0),
+            noise_type=args.noise_type,
+            noise_param=args.noise_param,
+        ).squeeze(0)
+
+        channels, height, width = clean.shape
+        coords = make_stitch_coords(height, width, patch_size, stride)
+
+        denoised_acc = torch.zeros_like(clean)
+        score_acc = torch.zeros_like(clean)
+        weight = torch.zeros((1, height, width), device=device, dtype=clean.dtype)
+
+        for start in range(0, len(coords), args.batch_size):
+            end = min(start + args.batch_size, len(coords))
+            patch_coords = coords[start:end]
+            noisy_patches = torch.stack(
+                [
+                    noisy[:, y : y + patch_size, x : x + patch_size]
+                    for y, x in patch_coords
+                ],
+                dim=0,
+            )
+            model_input = noisy_patches.reshape(noisy_patches.size(0), -1) if flatten else noisy_patches
+
+            denoised = n2s.denoise(
+                model_input,
+                smoothing=args.smoothing,
+                smoothing_samples=args.smoothing_samples,
+            )
+            score = n2s.score(
+                model_input,
+                smoothing=args.smoothing,
+                smoothing_samples=args.smoothing_samples,
+            )
+
+            if flatten:
+                denoised = denoised.view(-1, channels, patch_size, patch_size)
+                score = score.view(-1, channels, patch_size, patch_size)
+
+            for patch_index, (y, x) in enumerate(patch_coords):
+                denoised_acc[:, y : y + patch_size, x : x + patch_size] += denoised[patch_index]
+                score_acc[:, y : y + patch_size, x : x + patch_size] += score[patch_index]
+                weight[:, y : y + patch_size, x : x + patch_size] += 1.0
+
+        denoised_image = denoised_acc / weight.clamp_min(1.0)
+        score_image = score_acc / weight.clamp_min(1.0)
+
+        noisy_mse = F.mse_loss(noisy, clean).item()
+        denoised_mse = F.mse_loss(denoised_image, clean).item()
+        num_pixels = int(clean.numel())
+        noisy_mse_sum += noisy_mse * num_pixels
+        denoised_mse_sum += denoised_mse * num_pixels
+        pixel_count_sum += num_pixels
+
+        stem = f"{image_index:04d}_{Path(image_path).stem}"
+        save_stitched_tensor(clean, stitch_dir / "clean" / stem, args.stitch_format)
+        save_stitched_tensor(noisy, stitch_dir / "noisy" / stem, args.stitch_format)
+        save_stitched_tensor(denoised_image, stitch_dir / "denoised" / stem, args.stitch_format)
+        save_stitched_tensor(score_image, stitch_dir / "score" / stem, "npy")
+
+        image_summaries.append(
+            {
+                "image": str(image_path),
+                "height": height,
+                "width": width,
+                "channels": channels,
+                "num_patches": len(coords),
+                "noisy_mse": noisy_mse,
+                "denoised_mse": denoised_mse,
+                "noisy_psnr": psnr_from_mse(noisy_mse),
+                "denoised_psnr": psnr_from_mse(denoised_mse),
+                "improved_mse": denoised_mse < noisy_mse,
+            }
+        )
+
+    noisy_mse = noisy_mse_sum / max(pixel_count_sum, 1)
+    denoised_mse = denoised_mse_sum / max(pixel_count_sum, 1)
+    summary = {
+        "output_dir": stitch_dir,
+        "num_images": len(image_paths),
+        "num_pixels": pixel_count_sum,
+        "patch_size": patch_size,
+        "stride": stride,
+        "format": args.stitch_format,
+        "noisy_mse": noisy_mse,
+        "denoised_mse": denoised_mse,
+        "noisy_psnr": psnr_from_mse(noisy_mse),
+        "denoised_psnr": psnr_from_mse(denoised_mse),
+        "improved_mse": denoised_mse < noisy_mse,
+        "images": image_summaries,
+    }
+    save_config(stitch_dir / "summary.json", summary)
+    return summary
+
+
 def main():
     args = parse_args()
     if args.smoothing < 0:
@@ -179,13 +539,15 @@ def main():
             "Omit it so ARDAE is queried with --noise-param, or enable --smoothing."
         )
 
+    set_seed(args.seed)
     device = torch.device(args.device)
+    checkpoint_path, ardae_train_result, ardae_test_result = resolve_checkpoint(args)
     requested_output_dir = Path(args.output_dir)
     output_dir = make_unique_save_dir(requested_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     save_config(output_dir / "run_config.json", args)
 
-    ckpt = torch.load(args.checkpoint, map_location="cpu")
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
     ckpt_image_shape = ckpt.get("args", {}).get("image_shape")
     raw_clean = None
     if args.data_mode == "image-folder":
@@ -195,7 +557,7 @@ def main():
         raw_clean = load_array(args.clean_data, key=args.key)
 
     ardae, backbone, image_shape = load_ardae_from_checkpoint(
-        path=args.checkpoint,
+        path=checkpoint_path,
         input_dim=args.input_dim,
         device=device,
         clean=raw_clean,
@@ -292,7 +654,7 @@ def main():
         "clean_dtype": clean_dtype,
         "requested_output_dir": requested_output_dir,
         "output_dir": output_dir,
-        "checkpoint": Path(args.checkpoint),
+        "checkpoint": checkpoint_path,
         "clean_data": Path(args.clean_data),
         "noisy_mse": noisy_mse,
         "denoised_mse": denoised_mse,
@@ -301,6 +663,33 @@ def main():
         "score_clean_direction_cos": score_cos,
         "improved_mse": denoised_mse < noisy_mse,
     }
+    if ardae_train_result is not None:
+        summary["ardae_train"] = {
+            "save_dir": ardae_train_result["save_dir"],
+            "best_checkpoint_path": ardae_train_result["best_checkpoint_path"],
+            "last_checkpoint_path": ardae_train_result["last_checkpoint_path"],
+            "metrics_path": ardae_train_result["metrics_path"],
+            "best_val_loss": ardae_train_result["best_val_loss"],
+            "best_epoch": ardae_train_result["best_epoch"],
+        }
+    if ardae_test_result is not None:
+        summary["ardae_test"] = {
+            "output_dir": ardae_test_result["output_dir"],
+            "summary_path": ardae_test_result["summary_path"],
+            "metrics_path": ardae_test_result["metrics_path"],
+            "loss": ardae_test_result["summary"]["loss"],
+            "num_samples": ardae_test_result["summary"]["num_samples"],
+            "metrics": ardae_test_result["summary"]["metrics"],
+        }
+
+    if args.stitch_output:
+        summary["stitched"] = stitch_noise2score_outputs(
+            args=args,
+            n2s=n2s,
+            backbone=backbone,
+            output_dir=output_dir,
+            device=device,
+        )
 
     print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
     save_config(output_dir / "summary.json", summary)
@@ -308,7 +697,7 @@ def main():
     
     if args.copy_info:
         info_sources = {
-            "checkpoint_": Path(args.checkpoint).parent,
+            "checkpoint_": checkpoint_path.parent,
             "data_": info_dir_for(args.clean_data),
         }
 

@@ -7,7 +7,7 @@ EPOCH=200
 INPUT_DIM=1600
 BATCH_SIZE=8192
 
-CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
+CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
   --data "$DATA" \
   --input-dim $INPUT_DIM \
   --epochs $EPOCH \
@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
   > log_gaussian.txt 2>&1
 
 
-#CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
+#CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
 #  --data "$DATA" \
 #  --input-dim $INPUT_DIM \
 #  --epochs $EPOCH \
@@ -34,7 +34,7 @@ CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
 #  --use-metric \
 #  > log_poisson.txt 2>&1;
 
-#CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
+#CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
 #  --data "$DATA" \
 #  --input-dim $INPUT_DIM \
 #  --epochs $EPOCH \
