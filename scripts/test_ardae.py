@@ -7,7 +7,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import argparse
 import csv
 import json
-import random
 from datetime import datetime
 
 import numpy as np
@@ -34,16 +33,14 @@ except ImportError:
 
 from data import load_array, make_ardae_dataset
 from models.ardae import ARDAE
-
-
-SCORE_METRIC_KEYS = [
-    "score_mse",
-    "score_nmse",
-    "score_cos",
-    "score_corr",
-    "target_energy",
-    "pred_energy",
-]
+from utils import (
+    SCORE_METRIC_KEYS,
+    average_metric_sums,
+    make_unique_save_dir,
+    move_batch,
+    set_seed,
+    update_metric_sums,
+)
 
 
 def parse_args():
@@ -71,27 +68,6 @@ def parse_args():
     parser.add_argument("--save-samples", type=int, default=0, help="Save this many x/score samples to samples.npz.")
 
     return parser.parse_args()
-
-
-def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def make_unique_dir(base_dir):
-    base_dir = Path(base_dir)
-    if not base_dir.exists():
-        return base_dir
-
-    for index in range(1, 10000):
-        candidate = base_dir.with_name(f"{base_dir.name}_{index:03d}")
-        if not candidate.exists():
-            return candidate
-
-    raise RuntimeError(f"Could not find an unused output directory for {base_dir}")
 
 
 def get_ckpt_arg(ckpt_args, key, default=None):
@@ -146,37 +122,6 @@ def build_model(checkpoint, cli_args, device):
         "use_gaussian_smoothing": use_gaussian_smoothing,
     }
     return model, model_config, ckpt_args
-
-
-def move_batch(batch, device):
-    if isinstance(batch, (tuple, list)):
-        batch = batch[0]
-    return batch.to(device, non_blocking=True)
-
-
-def update_metric_sums(metric_sums, metric_counts, metrics, batch_size):
-    if not metrics:
-        return
-
-    for key in SCORE_METRIC_KEYS:
-        if key not in metrics:
-            continue
-
-        value = float(metrics[key])
-        if not np.isfinite(value):
-            continue
-
-        metric_sums[key] = metric_sums.get(key, 0.0) + value * batch_size
-        metric_counts[key] = metric_counts.get(key, 0) + batch_size
-
-
-def average_metric_sums(metric_sums, metric_counts):
-    averaged = {}
-    for key, total in metric_sums.items():
-        count = metric_counts.get(key, 0)
-        if count > 0:
-            averaged[key] = total / count
-    return averaged
 
 
 @torch.no_grad()
@@ -268,7 +213,7 @@ def main():
     output_dir = args.output_dir
     if output_dir is None:
         output_dir = checkpoint_path.parent / "tests" / checkpoint_path.stem
-    output_dir = make_unique_dir(output_dir)
+    output_dir = make_unique_save_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)
 
     raw_data = load_array(args.data, key=args.key)

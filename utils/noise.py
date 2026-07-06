@@ -2,6 +2,31 @@ import torch
 
 
 
+def make_noise_param(x, sigma_min=0.001, sigma_max=0.5, use_log_scale=True):
+    if sigma_min == sigma_max:
+        return torch.full(
+            (x.size(0), 1),
+            float(sigma_min),
+            device=x.device,
+            dtype=x.dtype,
+        )
+
+    if use_log_scale:
+        log_sigma_min = torch.log(torch.tensor(sigma_min, device=x.device, dtype=x.dtype))
+        log_sigma_max = torch.log(torch.tensor(sigma_max, device=x.device, dtype=x.dtype))
+
+        log_sigma = torch.empty(x.size(0), 1, device=x.device, dtype=x.dtype).uniform_(
+            log_sigma_min,
+            log_sigma_max,
+        )
+        return log_sigma.exp()
+
+    return torch.empty(x.size(0), 1, device=x.device, dtype=x.dtype).uniform_(
+        sigma_min,
+        sigma_max,
+    )
+
+
 def add_gaussian_noise(input, std):
     std = _view_param(std, input)
     eps = torch.randn_like(input)
@@ -37,6 +62,51 @@ def add_gamma_noise(input, concentration=2.0, clamp=True):
 
     eps = x_bar - input
     return x_bar, eps
+
+
+def add_observation_noise(x, noise_type, noise_param):
+    if noise_type == "gaussian":
+        y, _ = add_gaussian_noise(x, std=noise_param)
+        return y.clamp(0, 1)
+
+    if noise_type == "poisson":
+        y, _ = add_poisson_noise(x, peak=noise_param)
+        return y
+
+    if noise_type == "gamma":
+        y, _ = add_gamma_noise(x, concentration=noise_param)
+        return y
+
+    raise NotImplementedError(noise_type)
+
+
+def denoise_from_score(y, score, noise_type, noise_param, clamp=True, smoothing=0.0):
+    smoothing = float(smoothing or 0.0)
+
+    if smoothing > 0.0 and noise_type != "gaussian":
+        x_hat = y + smoothing ** 2 * score
+
+    elif noise_type == "gaussian":
+        sigma = noise_param
+        x_hat = y + sigma ** 2 * score
+
+    elif noise_type == "poisson":
+        peak = noise_param
+        x_hat = (y + 1.0 / (2.0 * peak)) * torch.exp(score / peak)
+
+    elif noise_type == "gamma":
+        alpha = noise_param
+        denom = (alpha - 1.0) - y * score
+        denom = denom.clamp_min(1e-6)
+        x_hat = alpha * y / denom
+
+    else:
+        raise NotImplementedError(f"Unknown noise_type: {noise_type}")
+
+    if clamp:
+        x_hat = x_hat.clamp(0, 1)
+
+    return x_hat
   
   
 def _view_param(param, input):

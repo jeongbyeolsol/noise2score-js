@@ -8,7 +8,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import argparse
 import json
-import math
 
 import numpy as np
 import torch
@@ -22,9 +21,17 @@ from data import (
     load_array,
     preprocess_ardae_data,
 )
-from models.ardae import ARDAE
-from utils import add_gaussian_noise, add_poisson_noise, add_gamma_noise
-from utils import make_unique_save_dir, save_config, config_all_from_to
+from utils import (
+    add_observation_noise,
+    config_all_from_to,
+    denoise_from_score,
+    make_unique_save_dir,
+    move_batch,
+    normalize_image_shape_arg,
+    psnr_from_mse,
+    save_config,
+)
+from utils.checkpoint import load_ardae_from_checkpoint
 
 from models.noise2score_blind import Noise2ScoreBlind
 
@@ -147,121 +154,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def add_observation_noise(x, noise_type, noise_param):
-    if noise_type == "gaussian":
-        y, _ = add_gaussian_noise(x, std=noise_param)
-        return y.clamp(0, 1)
-
-    if noise_type == "poisson":
-        y, _ = add_poisson_noise(x, peak=noise_param)
-        return y
-
-    if noise_type == "gamma":
-        y, _ = add_gamma_noise(x, concentration=noise_param)
-        return y
-
-    raise NotImplementedError(noise_type)
-
-
-def psnr_from_mse(mse, max_value=1.0):
-    mse = max(float(mse), 1e-12)
-    return 20.0 * math.log10(max_value) - 10.0 * math.log10(mse)
-
-
-def _as_tuple(value, default=None):
-    if value is None:
-        return default
-    if isinstance(value, str):
-        return tuple(int(v.strip()) for v in value.split(",") if v.strip())
-    return tuple(int(v) for v in value)
-
-
-def normalize_image_shape_arg(image_shape):
-    image_shape = _as_tuple(image_shape)
-    if image_shape is None:
-        return None
-    if len(image_shape) == 2:
-        return (1, *image_shape)
-    if len(image_shape) == 3:
-        return image_shape
-    raise ValueError("image_shape must be H W or C H W")
-
-
-def infer_image_shape_from_data(clean, input_dim, ckpt_args, override=None):
-    image_shape = normalize_image_shape_arg(override)
-    if image_shape is not None:
-        return image_shape
-
-    image_shape = normalize_image_shape_arg(ckpt_args.get("image_shape"))
-    if image_shape is not None:
-        return image_shape
-
-    if clean.ndim == 4:
-        if clean.shape[1] in (1, 3):
-            return tuple(int(v) for v in clean.shape[1:])
-        if clean.shape[-1] in (1, 3):
-            return (
-                int(clean.shape[-1]),
-                int(clean.shape[1]),
-                int(clean.shape[2]),
-            )
-
-    if clean.ndim == 3:
-        return (1, int(clean.shape[1]), int(clean.shape[2]))
-
-    side = int(round(float(input_dim) ** 0.5))
-    if side * side == int(input_dim):
-        return (1, side, side)
-
-    raise ValueError(
-        "Could not infer image_shape for UNet checkpoint. "
-        "Pass --image-shape C H W."
-    )
-
-
-def load_ardae_from_checkpoint(path, input_dim, device, clean=None, image_shape_override=None):
-    ckpt = torch.load(path, map_location="cpu")
-    ckpt_args = ckpt.get("args", {})
-    backbone = ckpt_args.get("backbone", "mlp")
-
-    image_shape = None
-    if backbone == "unet":
-        if clean is None:
-            image_shape = normalize_image_shape_arg(ckpt_args.get("image_shape"))
-        else:
-            image_shape = infer_image_shape_from_data(
-                clean,
-                input_dim,
-                ckpt_args,
-                override=image_shape_override,
-            )
-
-    model = ARDAE(
-        input_dim=input_dim,
-        h_dim=ckpt_args.get("h_dim", 1000),
-        noise_param=ckpt_args.get("noise_param", 0.1),
-        num_hidden_layers=ckpt_args.get("num_hidden_layers", 1),
-        nonlinearity=ckpt_args.get("nonlinearity", "tanh"),
-        noise_type=ckpt_args.get("noise_type", "gaussian"),
-        use_metric=False,
-        backbone=backbone,
-        image_shape=image_shape,
-        base_channels=ckpt_args.get("base_channels", 64),
-        channel_mults=_as_tuple(
-            ckpt_args.get("channel_mults"),
-            default=(1, 2, 4, 8),
-        ),
-        use_norm=not ckpt_args.get("no_norm", False),
-        use_gaussian_smoothing=ckpt_args.get("use_gaussian_smoothing", False),
-    ).to(device)
-
-    state_dict = ckpt.get("model_state_dict", ckpt)
-    model.load_state_dict(state_dict)
-    model.eval()
-
-    return model, backbone, image_shape
-
-
 def infer_stream_shape(args, ckpt_image_shape=None):
     image_shape = normalize_image_shape_arg(args.image_shape)
     if image_shape is None:
@@ -345,12 +237,6 @@ def info_dir_for(path):
     return path if path.is_dir() else path.parent
 
 
-def move_batch(batch, device):
-    if isinstance(batch, (tuple, list)):
-        batch = batch[0]
-    return batch.to(device, non_blocking=True)
-
-
 def get_score_sigma(args, candidate_param, candidate_smoothing=None):
     if args.score_sigma_mode == "same":
         if candidate_smoothing is not None:
@@ -417,35 +303,6 @@ def build_candidate_jobs(args, n2s, device):
             )
 
     return jobs, params_list, smoothing_list
-
-
-def denoise_from_score(y, score, noise_type, noise_param, clamp=True, smoothing=0.0):
-    smoothing = float(smoothing or 0.0)
-
-    if smoothing > 0.0 and noise_type != "gaussian":
-        x_hat = y + smoothing ** 2 * score
-
-    elif noise_type == "gaussian":
-        sigma = noise_param
-        x_hat = y + sigma ** 2 * score
-
-    elif noise_type == "poisson":
-        peak = noise_param
-        x_hat = (y + 1.0 / (2.0 * peak)) * torch.exp(score / peak)
-
-    elif noise_type == "gamma":
-        alpha = noise_param
-        denom = (alpha - 1.0) - y * score
-        denom = denom.clamp_min(1e-6)
-        x_hat = alpha * y / denom
-
-    else:
-        raise NotImplementedError(f"Unknown noise_type: {noise_type}")
-
-    if clamp:
-        x_hat = x_hat.clamp(0, 1)
-
-    return x_hat
 
 
 @torch.no_grad()
