@@ -6,24 +6,26 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import argparse
 import csv
-import random
 from datetime import datetime
 
-import numpy as np
 import torch
 
 from config import ARDAEConfig
-from utils import make_unique_save_dir, log_message, save_config, config_all_from_to
-
-
-SCORE_METRIC_KEYS = [
-    "score_mse",
-    "score_nmse",
-    "score_cos",
-    "score_corr",
-    "target_energy",
-    "pred_energy",
-]
+from utils import (
+    SCORE_METRIC_KEYS,
+    average_metric_sums,
+    config_all_from_to,
+    log_message,
+    make_loader_kwargs,
+    make_noise_param,
+    make_unique_save_dir,
+    move_batch,
+    normalize_image_shape_arg,
+    parse_channel_mults,
+    save_config,
+    set_seed,
+    update_metric_sums,
+)
 
 
 try:
@@ -139,29 +141,6 @@ def make_config(args):
     return config
 
 
-def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-
-def parse_channel_mults(text):
-    return tuple(int(v.strip()) for v in text.split(",") if v.strip())
-
-
-def normalize_image_shape_arg(image_shape):
-    if image_shape is None:
-        return None
-    image_shape = tuple(int(v) for v in image_shape)
-    if len(image_shape) == 2:
-        return (1, *image_shape)
-    if len(image_shape) == 3:
-        return image_shape
-    raise ValueError("--image-shape must be H W or C H W")
-
-
 def infer_unet_image_shape(raw_data, input_dim, image_shape_arg):
     image_shape = normalize_image_shape_arg(image_shape_arg)
     if image_shape is not None:
@@ -220,73 +199,6 @@ def infer_image_folder_shape(args):
     args.input_dim = int(args.channels * patch_size * patch_size)
     return image_shape
 
-
-def move_batch(batch, device):
-    if isinstance(batch, (tuple, list)):
-        batch = batch[0]
-    return batch.to(device, non_blocking=True)
-
-
-def make_loader_kwargs(args, device):
-    kwargs = {
-        "num_workers": args.num_workers,
-        "pin_memory": device.type == "cuda",
-    }
-    if args.num_workers > 0:
-        kwargs["persistent_workers"] = args.persistent_workers
-        kwargs["prefetch_factor"] = args.prefetch_factor
-    return kwargs
-
-def update_metric_sums(metric_sums, metric_counts, metrics, batch_size):
-    if not metrics:
-        return
-
-    for key in SCORE_METRIC_KEYS:
-        if key not in metrics:
-            continue
-
-        value = float(metrics[key])
-        if not np.isfinite(value):
-            continue
-
-        metric_sums[key] = metric_sums.get(key, 0.0) + value * batch_size
-        metric_counts[key] = metric_counts.get(key, 0) + batch_size
-
-
-def average_metric_sums(metric_sums, metric_counts):
-    averaged = {}
-    for key, total in metric_sums.items():
-        count = metric_counts.get(key, 0)
-        if count > 0:
-            averaged[key] = total / count
-    return averaged
-
-
-def make_noise_param(x, sigma_min=0.001, sigma_max=0.5, use_log_scale=True):
-    if sigma_min == sigma_max:
-        return torch.full(
-            (x.size(0), 1),
-            float(sigma_min),
-            device=x.device,
-            dtype=x.dtype,
-        )
-    
-    if use_log_scale:
-        log_sigma_min = torch.log(torch.tensor(sigma_min, device=x.device, dtype=x.dtype))
-        log_sigma_max = torch.log(torch.tensor(sigma_max, device=x.device, dtype=x.dtype))
-
-        log_sigma = torch.empty(x.size(0), 1, device=x.device, dtype=x.dtype).uniform_(
-            log_sigma_min,
-            log_sigma_max,
-        )
-        noise_param = log_sigma.exp()
-    else:
-        noise_param = torch.empty(x.size(0), 1, device=x.device, dtype=x.dtype).uniform_(
-            sigma_min,
-            sigma_max,
-        )
-
-    return noise_param
 
 def train_one_epoch(model, loader, optimizer, device, config: ARDAEConfig, epoch=None):
     model.train()
