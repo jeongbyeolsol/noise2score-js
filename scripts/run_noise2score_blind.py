@@ -22,6 +22,7 @@ from data import (
     preprocess_ardae_data,
 )
 from scripts.run_noise2score import (
+    infer_path_data_mode,
     load_clean_image_tensor,
     make_stitch_coords,
     save_stitched_tensor,
@@ -202,6 +203,12 @@ def infer_stream_shape(args, ckpt_image_shape=None):
         args.stride = args.patch_size
     args.channels = channels
     return image_shape
+
+
+def normalize_data_mode(args):
+    eval_data_path = args.noisy_data or args.clean_data
+    if args.data_mode == "array":
+        args.data_mode = infer_path_data_mode(eval_data_path, fallback=args.data_mode)
 
 
 def make_clean_loader(args, backbone, image_shape, device, raw_clean=None):
@@ -530,6 +537,7 @@ def main():
 
     if args.clean_data is None and args.noisy_data is None:
         raise ValueError("Provide --clean-data for synthetic-noise eval or --noisy-data for denoising noisy inputs.")
+    normalize_data_mode(args)
     if args.score_sigma_mode == "fixed" and args.fixed_score_sigma is None:
         raise ValueError("--score-sigma-mode fixed requires --fixed-score-sigma.")
     if args.smoothing < 0:

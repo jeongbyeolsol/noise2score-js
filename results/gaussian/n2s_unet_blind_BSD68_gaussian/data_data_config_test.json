@@ -1,0 +1,11 @@
+{
+  "MAX_PATCHES_PER_IMAGE": 2048,
+  "OUT_DIR": "datasets/BSD68_processed",
+  "OUT_PATH": "datasets/BSD68_processed/BSD68_patches_128x128.npy",
+  "PATCH_SIZE": 128,
+  "RAW_DIR": "datasets/BSD68/original",
+  "SEED": 0,
+  "STRIDE": 32,
+  "data_name": "BSD68",
+  "max_total_patches": 139264
+}

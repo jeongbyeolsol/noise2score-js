@@ -9,6 +9,8 @@ venv/
 
 experiments/
 logs/
+trash_box/
+
 
 samples/
 datasets/
@@ -22,3 +24,4 @@ datasets/
 
 !*.json
 !*.csv
+
