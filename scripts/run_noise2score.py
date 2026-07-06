@@ -40,7 +40,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--checkpoint", type=str, default=None)
-    parser.add_argument("--clean-data", type=str, required=True)
+    parser.add_argument("--clean-data", type=str, default=None)
+    parser.add_argument(
+        "--noisy-data",
+        type=str,
+        default=None,
+        help="Path to already-noisy data/image(s). If set, Noise2Score denoises without adding synthetic noise.",
+    )
     parser.add_argument(
         "--data-mode",
         type=str,
@@ -49,6 +55,7 @@ def parse_args():
         help="array reads one array file; image-folder streams image or per-image npy files.",
     )
     parser.add_argument("--key", type=str, default=None)
+    parser.add_argument("--noisy-key", type=str, default=None)
 
     parser.add_argument("--input-dim", type=int, required=True)
     parser.add_argument("--batch-size", type=int, default=256)
@@ -141,6 +148,9 @@ def parse_args():
 
 
 def build_ardae_train_args(args):
+    if args.ardae_train_data is None and args.clean_data is None:
+        raise ValueError("--train-ardae needs --ardae-train-data or --clean-data.")
+
     return Namespace(
         data=args.ardae_train_data or args.clean_data,
         data_mode=args.ardae_train_data_mode or args.data_mode,
@@ -190,6 +200,9 @@ def build_ardae_train_args(args):
 
 
 def build_ardae_test_args(args, checkpoint):
+    if args.ardae_test_data is None and args.clean_data is None:
+        raise ValueError("--test-ardae needs --ardae-test-data or --clean-data.")
+
     return Namespace(
         checkpoint=str(checkpoint),
         data=args.ardae_test_data or args.clean_data,
@@ -262,9 +275,12 @@ def infer_stream_shape(args, ckpt_image_shape=None):
 
 
 def make_clean_loader(args, backbone, image_shape, device, raw_clean=None):
+    data_path = args.noisy_data or args.clean_data
+    data_key = args.noisy_key if args.noisy_data is not None else args.key
+
     if args.data_mode == "array":
         if raw_clean is None:
-            raw_clean = load_array(args.clean_data, key=args.key)
+            raw_clean = load_array(data_path, key=data_key)
         raw_clean = raw_clean.float()
         if raw_clean.max() > 1.5:
             raw_clean = raw_clean / 255.0
@@ -286,7 +302,7 @@ def make_clean_loader(args, backbone, image_shape, device, raw_clean=None):
         )
         return loader, len(clean), str(clean.dtype)
 
-    clean_paths = find_image_paths(args.clean_data, recursive=args.recursive_images)
+    clean_paths = find_image_paths(data_path, recursive=args.recursive_images)
     if len(clean_paths) == 0:
         raise ValueError(f"No image/npy files found in {args.clean_data}.")
 
@@ -414,7 +430,7 @@ def stitch_noise2score_outputs(args, n2s, backbone, output_dir, device):
     if args.max_patches_per_image is not None:
         raise ValueError("--stitch-output needs all patches; omit --max-patches-per-image.")
 
-    image_paths = find_image_paths(args.clean_data, recursive=args.recursive_images)
+    image_paths = find_image_paths(args.noisy_data or args.clean_data, recursive=args.recursive_images)
     if len(image_paths) == 0:
         raise ValueError(f"No image/npy files found in {args.clean_data}.")
 
@@ -429,20 +445,23 @@ def stitch_noise2score_outputs(args, n2s, backbone, output_dir, device):
     stride = int(args.stride)
 
     for image_index, image_path in enumerate(tqdm(image_paths, desc="Stitch images")):
-        clean = load_clean_image_tensor(image_path, channels=args.channels)
-        clean = clean.to(device)
-        noisy = add_observation_noise(
-            x=clean.unsqueeze(0),
-            noise_type=args.noise_type,
-            noise_param=args.noise_param,
-        ).squeeze(0)
+        if args.noisy_data is not None:
+            clean = None
+            noisy = load_clean_image_tensor(image_path, channels=args.channels).to(device)
+        else:
+            clean = load_clean_image_tensor(image_path, channels=args.channels).to(device)
+            noisy = add_observation_noise(
+                x=clean.unsqueeze(0),
+                noise_type=args.noise_type,
+                noise_param=args.noise_param,
+            ).squeeze(0)
 
-        channels, height, width = clean.shape
+        channels, height, width = noisy.shape
         coords = make_stitch_coords(height, width, patch_size, stride)
 
-        denoised_acc = torch.zeros_like(clean)
-        score_acc = torch.zeros_like(clean)
-        weight = torch.zeros((1, height, width), device=device, dtype=clean.dtype)
+        denoised_acc = torch.zeros_like(noisy)
+        score_acc = torch.zeros_like(noisy)
+        weight = torch.zeros((1, height, width), device=device, dtype=noisy.dtype)
 
         for start in range(0, len(coords), args.batch_size):
             end = min(start + args.batch_size, len(coords))
@@ -479,15 +498,19 @@ def stitch_noise2score_outputs(args, n2s, backbone, output_dir, device):
         denoised_image = denoised_acc / weight.clamp_min(1.0)
         score_image = score_acc / weight.clamp_min(1.0)
 
-        noisy_mse = F.mse_loss(noisy, clean).item()
-        denoised_mse = F.mse_loss(denoised_image, clean).item()
-        num_pixels = int(clean.numel())
-        noisy_mse_sum += noisy_mse * num_pixels
-        denoised_mse_sum += denoised_mse * num_pixels
+        noisy_mse = None
+        denoised_mse = None
+        num_pixels = int(noisy.numel())
         pixel_count_sum += num_pixels
+        if clean is not None:
+            noisy_mse = F.mse_loss(noisy, clean).item()
+            denoised_mse = F.mse_loss(denoised_image, clean).item()
+            noisy_mse_sum += noisy_mse * num_pixels
+            denoised_mse_sum += denoised_mse * num_pixels
 
         stem = f"{image_index:04d}_{Path(image_path).stem}"
-        save_stitched_tensor(clean, stitch_dir / "clean" / stem, args.stitch_format)
+        if clean is not None:
+            save_stitched_tensor(clean, stitch_dir / "clean" / stem, args.stitch_format)
         save_stitched_tensor(noisy, stitch_dir / "noisy" / stem, args.stitch_format)
         save_stitched_tensor(denoised_image, stitch_dir / "denoised" / stem, args.stitch_format)
         save_stitched_tensor(score_image, stitch_dir / "score" / stem, "npy")
@@ -501,14 +524,15 @@ def stitch_noise2score_outputs(args, n2s, backbone, output_dir, device):
                 "num_patches": len(coords),
                 "noisy_mse": noisy_mse,
                 "denoised_mse": denoised_mse,
-                "noisy_psnr": psnr_from_mse(noisy_mse),
-                "denoised_psnr": psnr_from_mse(denoised_mse),
-                "improved_mse": denoised_mse < noisy_mse,
+                "noisy_psnr": psnr_from_mse(noisy_mse) if noisy_mse is not None else None,
+                "denoised_psnr": psnr_from_mse(denoised_mse) if denoised_mse is not None else None,
+                "improved_mse": denoised_mse < noisy_mse if denoised_mse is not None else None,
             }
         )
 
-    noisy_mse = noisy_mse_sum / max(pixel_count_sum, 1)
-    denoised_mse = denoised_mse_sum / max(pixel_count_sum, 1)
+    has_clean = args.noisy_data is None
+    noisy_mse = noisy_mse_sum / max(pixel_count_sum, 1) if has_clean else None
+    denoised_mse = denoised_mse_sum / max(pixel_count_sum, 1) if has_clean else None
     summary = {
         "output_dir": stitch_dir,
         "num_images": len(image_paths),
@@ -516,11 +540,12 @@ def stitch_noise2score_outputs(args, n2s, backbone, output_dir, device):
         "patch_size": patch_size,
         "stride": stride,
         "format": args.stitch_format,
+        "input_mode": "noisy" if args.noisy_data is not None else "synthetic",
         "noisy_mse": noisy_mse,
         "denoised_mse": denoised_mse,
-        "noisy_psnr": psnr_from_mse(noisy_mse),
-        "denoised_psnr": psnr_from_mse(denoised_mse),
-        "improved_mse": denoised_mse < noisy_mse,
+        "noisy_psnr": psnr_from_mse(noisy_mse) if noisy_mse is not None else None,
+        "denoised_psnr": psnr_from_mse(denoised_mse) if denoised_mse is not None else None,
+        "improved_mse": denoised_mse < noisy_mse if denoised_mse is not None else None,
         "images": image_summaries,
     }
     save_config(stitch_dir / "summary.json", summary)
@@ -529,6 +554,8 @@ def stitch_noise2score_outputs(args, n2s, backbone, output_dir, device):
 
 def main():
     args = parse_args()
+    if args.clean_data is None and args.noisy_data is None:
+        raise ValueError("Provide --clean-data for synthetic-noise eval or --noisy-data for denoising noisy inputs.")
     if args.smoothing < 0:
         raise ValueError("--smoothing must be >= 0.")
     if args.smoothing > 0 and args.smoothing_samples < 1:
@@ -550,11 +577,14 @@ def main():
     ckpt = torch.load(checkpoint_path, map_location="cpu")
     ckpt_image_shape = ckpt.get("args", {}).get("image_shape")
     raw_clean = None
+    eval_data_path = args.noisy_data or args.clean_data
+    eval_key = args.noisy_key if args.noisy_data is not None else args.key
+
     if args.data_mode == "image-folder":
         stream_image_shape = infer_stream_shape(args, ckpt_image_shape)
     else:
         stream_image_shape = args.image_shape
-        raw_clean = load_array(args.clean_data, key=args.key)
+        raw_clean = load_array(eval_data_path, key=eval_key)
 
     ardae, backbone, image_shape = load_ardae_from_checkpoint(
         path=checkpoint_path,
@@ -591,13 +621,17 @@ def main():
     saved_count = 0
 
     for batch in tqdm(loader, desc="Noise2Score eval", total=len(loader)):
-        x = move_batch(batch, device)
-
-        y = add_observation_noise(
-            x=x,
-            noise_type=args.noise_type,
-            noise_param=args.noise_param,
-        )
+        batch_tensor = move_batch(batch, device)
+        if args.noisy_data is not None:
+            x = None
+            y = batch_tensor
+        else:
+            x = batch_tensor
+            y = add_observation_noise(
+                x=x,
+                noise_type=args.noise_type,
+                noise_param=args.noise_param,
+            )
 
         x_hat = n2s.denoise(
             y,
@@ -605,41 +639,46 @@ def main():
             smoothing_samples=args.smoothing_samples,
         )
 
-        noisy_mse = F.mse_loss(y, x).item()
-        denoised_mse = F.mse_loss(x_hat, x).item()
+        noisy_mse = F.mse_loss(y, x).item() if x is not None else None
+        denoised_mse = F.mse_loss(x_hat, x).item() if x is not None else None
 
         score = n2s.score(
             y,
             smoothing=args.smoothing,
             smoothing_samples=args.smoothing_samples,
         )
-        cos = F.cosine_similarity(
-            score.flatten(1),
-            (x - y).flatten(1),
-            dim=1,
-            eps=1e-8,
-        ).mean().item()
+        cos = None
+        if x is not None:
+            cos = F.cosine_similarity(
+                score.flatten(1),
+                (x - y).flatten(1),
+                dim=1,
+                eps=1e-8,
+            ).mean().item()
         
         if args.save_output and saved_count < args.save_output_limit:
             remain = args.save_output_limit - saved_count
             take = min(remain, x.size(0))
 
-            save_clean.append(x[:take].detach().cpu())
+            if x is not None:
+                save_clean.append(x[:take].detach().cpu())
             save_noisy.append(y[:take].detach().cpu())
             save_denoised.append(x_hat[:take].detach().cpu())
             save_score.append(score[:take].detach().cpu())
 
             saved_count += take
 
-        batch_size = x.size(0)
+        batch_size = y.size(0)
         total_count += batch_size
-        noisy_mse_sum += noisy_mse * batch_size
-        denoised_mse_sum += denoised_mse * batch_size
-        cos_sum += cos * batch_size
+        if x is not None:
+            noisy_mse_sum += noisy_mse * batch_size
+            denoised_mse_sum += denoised_mse * batch_size
+            cos_sum += cos * batch_size
 
-    noisy_mse = noisy_mse_sum / total_count
-    denoised_mse = denoised_mse_sum / total_count
-    score_cos = cos_sum / total_count
+    has_clean = args.noisy_data is None
+    noisy_mse = noisy_mse_sum / total_count if has_clean else None
+    denoised_mse = denoised_mse_sum / total_count if has_clean else None
+    score_cos = cos_sum / total_count if has_clean else None
 
     summary = {
         "backbone": backbone,
@@ -650,18 +689,20 @@ def main():
         "smoothing_samples": args.smoothing_samples,
         "score_sigma": args.score_sigma,
         "data_mode": args.data_mode,
+        "input_mode": "noisy" if args.noisy_data is not None else "synthetic",
         "num_samples": num_samples,
         "clean_dtype": clean_dtype,
         "requested_output_dir": requested_output_dir,
         "output_dir": output_dir,
         "checkpoint": checkpoint_path,
-        "clean_data": Path(args.clean_data),
+        "clean_data": Path(args.clean_data) if args.clean_data is not None else None,
+        "noisy_data": Path(args.noisy_data) if args.noisy_data is not None else None,
         "noisy_mse": noisy_mse,
         "denoised_mse": denoised_mse,
-        "noisy_psnr": psnr_from_mse(noisy_mse),
-        "denoised_psnr": psnr_from_mse(denoised_mse),
+        "noisy_psnr": psnr_from_mse(noisy_mse) if noisy_mse is not None else None,
+        "denoised_psnr": psnr_from_mse(denoised_mse) if denoised_mse is not None else None,
         "score_clean_direction_cos": score_cos,
-        "improved_mse": denoised_mse < noisy_mse,
+        "improved_mse": denoised_mse < noisy_mse if denoised_mse is not None else None,
     }
     if ardae_train_result is not None:
         summary["ardae_train"] = {
@@ -698,7 +739,7 @@ def main():
     if args.copy_info:
         info_sources = {
             "checkpoint_": checkpoint_path.parent,
-            "data_": info_dir_for(args.clean_data),
+            "data_": info_dir_for(eval_data_path),
         }
 
         for prefix, info_dir in info_sources.items():
@@ -710,12 +751,13 @@ def main():
         save_output_dir = output_dir / Path('output')
         save_output_dir.mkdir(parents=True, exist_ok=True)
 
-        clean_np = torch.cat(save_clean, dim=0).numpy()
+        clean_np = torch.cat(save_clean, dim=0).numpy() if save_clean else None
         noisy_np = torch.cat(save_noisy, dim=0).numpy()
         denoised_np = torch.cat(save_denoised, dim=0).numpy()
         score_np = torch.cat(save_score, dim=0).numpy()
 
-        np.save(save_output_dir / "clean.npy", clean_np)
+        if clean_np is not None:
+            np.save(save_output_dir / "clean.npy", clean_np)
         np.save(save_output_dir / "noisy.npy", noisy_np)
         np.save(save_output_dir / "denoised.npy", denoised_np)
         np.save(save_output_dir / "score.npy", score_np)
