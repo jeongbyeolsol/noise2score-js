@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import numpy as np
+
 import torch
 
 '''
@@ -76,3 +80,63 @@ def expand_tensor(input, sample_size, do_unsqueeze):
         sz_to[0] = batch_size*sample_size
     input_expanded_flattened = input_expanded.view(*sz_to)
     return input_expanded, input_expanded_flattened
+
+
+
+def load_array(path, key=None):
+    """
+    csv/txt/tsv, npy/npz, pt/pth 파일을 torch.Tensor로 읽는다.
+
+    npz 또는 dict 형태의 pt/pth 파일은 key가 필요할 수 있다.
+    key가 없고 항목이 하나뿐이면 그 항목을 자동으로 사용한다.
+    """
+    path = Path(path)
+    suffix = path.suffix.lower()
+
+    if suffix in {".csv", ".txt", ".tsv"}:
+        delimiter = "," if suffix == ".csv" else None
+        array = np.loadtxt(path, delimiter=delimiter)
+        return torch.as_tensor(array)
+
+    if suffix == ".npy":
+        return torch.as_tensor(np.load(path))
+
+    if suffix == ".npz":
+        archive = np.load(path)
+        if key is None:
+            if len(archive.files) != 1:
+                raise ValueError(f"key must be given for {path}; found keys: {archive.files}")
+            key = archive.files[0]
+        return torch.as_tensor(archive[key])
+
+    if suffix in {".pt", ".pth"}:
+        obj = torch.load(path, map_location="cpu")
+        if torch.is_tensor(obj):
+            return obj
+        if isinstance(obj, dict):
+            if key is None:
+                if len(obj) != 1:
+                    raise ValueError(f"key must be given for {path}; found keys: {list(obj.keys())}")
+                key = next(iter(obj))
+            return torch.as_tensor(obj[key])
+        return torch.as_tensor(obj)
+
+    raise ValueError(f"Unsupported data file type: {suffix}")
+
+
+
+def normalize_tensor(x, method="standard", eps=1e-8):
+    # MLP [N, D]뿐 아니라 이미지 [N, C, H, W]도 sample 차원 기준으로 정규화한다.
+    reduce_dims = (0,)
+
+    if method == "standard":
+        mean = x.mean(dim=reduce_dims, keepdim=True)
+        std = x.std(dim=reduce_dims, keepdim=True).clamp_min(eps)
+        return (x - mean) / std
+
+    if method in {"minmax", "zero_one"}:
+        x_min = x.amin(dim=reduce_dims, keepdim=True)
+        x_max = x.amax(dim=reduce_dims, keepdim=True)
+        return (x - x_min) / (x_max - x_min).clamp_min(eps)
+
+    raise ValueError(f"Unknown normalize method: {method}")

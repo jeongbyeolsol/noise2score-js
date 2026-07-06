@@ -44,14 +44,21 @@ except ImportError:
 
     tqdm.write = print
 
-from data import load_array, make_ardae_dataloaders
+from data import (
+    find_image_paths,
+    load_array,
+    make_ardae_dataloaders,
+    make_image_patch_dataloaders,
+    make_streaming_image_patch_dataloaders,
+)
 from models.ardae import ARDAE
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train ARDAE only.")
 
-    parser.add_argument("--data", type=str, required=True, help="Path to csv/txt/tsv/npy/npz/pt/pth data file.")
+    parser.add_argument("--data", type=str, required=True, help="Path to array file, image folder, image file, or image list.")
+    parser.add_argument("--data-mode", type=str, default="array", choices=["array", "image-folder"], help="Use array data or lazy image patch loading.")
     parser.add_argument("--key", type=str, default=None, help="Key for npz or dict-style pt/pth files.")
     parser.add_argument("--input-dim", type=int, required=True, help="Feature dimension expected by ARDAE.")
     parser.add_argument("--normalize", type=str, default=None, choices=["standard", "minmax", "zero_one"])
@@ -63,6 +70,8 @@ def parse_args():
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--val-ratio", type=float, default=0.1)
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument("--persistent-workers", action="store_true", help="Keep DataLoader workers alive between epochs.")
+    parser.add_argument("--prefetch-factor", type=int, default=2, help="DataLoader prefetch factor when num_workers > 0.")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
 
@@ -79,6 +88,12 @@ def parse_args():
 
     parser.add_argument("--backbone", type=str, default="mlp", choices=["mlp", "unet"], help="Score network backbone.")
     parser.add_argument("--image-shape", type=int, nargs="+", default=None, help="UNet image shape: C H W or H W. Example: --image-shape 1 40 40")
+    parser.add_argument("--patch-size", type=int, default=None, help="Patch size for --data-mode image-folder.")
+    parser.add_argument("--stride", type=int, default=None, help="Patch stride for --data-mode image-folder.")
+    parser.add_argument("--channels", type=int, default=1, choices=[1, 3], help="Image channels for lazy image patch loading.")
+    parser.add_argument("--max-patches-per-image", type=int, default=None, help="Optional deterministic patch subsample per image.")
+    parser.add_argument("--recursive-images", action="store_true", help="Find images recursively under --data when using image-folder mode.")
+    parser.add_argument("--patch-loader", type=str, default="stream", choices=["stream", "map"], help="stream opens each image once and yields many patches; map keeps random patch access.")
     parser.add_argument("--base-channels", type=int, default=64, help="UNet base channel count.")
     parser.add_argument("--channel-mults", type=str, default="1,2,4,8", help="Comma-separated UNet channel multipliers.")
     parser.add_argument("--no-norm", action="store_true", help="Disable GroupNorm in UNet blocks.")
@@ -86,14 +101,41 @@ def parse_args():
     parser.add_argument("--sigma-min", type=float, default=0.001, help="Minimum ARDAE training noise level.")
     parser.add_argument("--sigma-max", type=float, default=0.5, help="Maximum ARDAE training noise level.")
     parser.add_argument("--linear-sigma", action="store_true", help="Sample noise levels uniformly in linear scale instead of log scale.")
+    parser.add_argument(
+        "--smoothing",
+        nargs="?",
+        const="range",
+        default=None,
+        help=(
+            "Enable original-style Gaussian smoothing for ARDAE training. "
+            "Use without a value to sample sigma from --sigma-min/--sigma-max, "
+            "or pass a positive value for fixed sigma."
+        ),
+    )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.use_gaussian_smoothing = args.smoothing is not None
+    args.smoothing_sigma = None
+
+    if args.smoothing not in (None, "range"):
+        args.smoothing_sigma = float(args.smoothing)
+        if args.smoothing_sigma <= 0:
+            raise ValueError("--smoothing value must be positive.")
+
+    return args
 
 def make_config(args):
     config = ARDAEConfig()
     config.sigma_min = args.sigma_min
     config.sigma_max = args.sigma_max
     config.use_log_scale = not args.linear_sigma
+    config.use_gaussian_smoothing = args.use_gaussian_smoothing
+
+    if args.smoothing_sigma is not None:
+        config.sigma_min = args.smoothing_sigma
+        config.sigma_max = args.smoothing_sigma
+        config.use_log_scale = False
+
     return config
 
 
@@ -146,10 +188,54 @@ def infer_unet_image_shape(raw_data, input_dim, image_shape_arg):
     )
 
 
+def infer_image_folder_shape(args):
+    patch_size = args.patch_size
+    if patch_size is None:
+        image_shape = normalize_image_shape_arg(args.image_shape)
+        if image_shape is None:
+            raise ValueError(
+                "--data-mode image-folder requires --patch-size or --image-shape."
+            )
+        channels, height, width = image_shape
+        if height != width:
+            raise ValueError("Lazy patch loading currently requires square patches.")
+        patch_size = height
+        args.patch_size = patch_size
+        args.channels = channels
+
+    if args.stride is None:
+        args.stride = patch_size
+
+    image_shape = normalize_image_shape_arg(args.image_shape)
+    if image_shape is None:
+        image_shape = (args.channels, patch_size, patch_size)
+    else:
+        channels, height, width = image_shape
+        if height != patch_size or width != patch_size:
+            raise ValueError(
+                f"--image-shape {image_shape} does not match --patch-size {patch_size}."
+            )
+        args.channels = channels
+
+    args.input_dim = int(args.channels * patch_size * patch_size)
+    return image_shape
+
+
 def move_batch(batch, device):
     if isinstance(batch, (tuple, list)):
         batch = batch[0]
     return batch.to(device, non_blocking=True)
+
+
+def make_loader_kwargs(args, device):
+    kwargs = {
+        "num_workers": args.num_workers,
+        "pin_memory": device.type == "cuda",
+    }
+    if args.num_workers > 0:
+        kwargs["persistent_workers"] = args.persistent_workers
+        kwargs["prefetch_factor"] = args.prefetch_factor
+    return kwargs
 
 def update_metric_sums(metric_sums, metric_counts, metrics, batch_size):
     if not metrics:
@@ -176,7 +262,14 @@ def average_metric_sums(metric_sums, metric_counts):
     return averaged
 
 
-def make_noise(x, sigma_min=0.001, sigma_max=0.5, use_log_scale=True):
+def make_noise_param(x, sigma_min=0.001, sigma_max=0.5, use_log_scale=True):
+    if sigma_min == sigma_max:
+        return torch.full(
+            (x.size(0), 1),
+            float(sigma_min),
+            device=x.device,
+            dtype=x.dtype,
+        )
     
     if use_log_scale:
         log_sigma_min = torch.log(torch.tensor(sigma_min, device=x.device, dtype=x.dtype))
@@ -210,7 +303,7 @@ def train_one_epoch(model, loader, optimizer, device, config: ARDAEConfig, epoch
         
         noise_param = None
         if config.sigma_min is not None and config.sigma_max is not None:
-            noise_param = make_noise(
+            noise_param = make_noise_param(
                 x,
                 sigma_min=config.sigma_min,
                 sigma_max=config.sigma_max,
@@ -267,7 +360,7 @@ def evaluate(model, loader, device, config: ARDAEConfig, epoch=None):
         x = move_batch(batch, device)
         noise_param = None
         if config.sigma_min is not None and config.sigma_max is not None:
-            noise_param = make_noise(
+            noise_param = make_noise_param(
                 x,
                 sigma_min=config.sigma_min,
                 sigma_max=config.sigma_max,
@@ -321,8 +414,11 @@ def main():
 
     if not 0.0 <= args.val_ratio < 1.0:
         raise ValueError("--val-ratio must be in [0, 1).")
+    if args.data_mode == "image-folder" and args.normalize is not None:
+        raise ValueError("--normalize is not supported with lazy image-folder loading.")
 
     device = torch.device(args.device)
+    loader_kwargs = make_loader_kwargs(args, device)
     requested_save_dir = Path(args.save_dir)
     save_dir = make_unique_save_dir(requested_save_dir)
     save_dir.mkdir(parents=True, exist_ok=False)
@@ -341,39 +437,99 @@ def main():
         log_message(f"requested_save_dir already existed; using: {save_dir}", log_path)
     log_message(f"device: {device}", log_path)
 
-    raw_data = load_array(args.data, key=args.key)
     log_message(f"data: {args.data}", log_path)
-    log_message(f"raw_data_shape: {tuple(raw_data.shape)}", log_path)
 
     channel_mults = parse_channel_mults(args.channel_mults)
     image_shape = None
     flatten = not args.no_flatten
-    if args.backbone == "unet":
-        image_shape = infer_unet_image_shape(raw_data, args.input_dim, args.image_shape)
-        flatten = False
+    if args.data_mode == "image-folder":
+        image_paths = find_image_paths(args.data, recursive=args.recursive_images)
+        has_npy_paths = any(Path(path).suffix.lower() == ".npy" for path in image_paths)
+        if has_npy_paths and args.patch_loader != "stream":
+            raise ValueError(
+                ".npy image folders require --patch-loader stream. "
+                "The map loader is only for PIL-readable image files."
+            )
+        image_shape = infer_image_folder_shape(args)
+        flatten = args.backbone != "unet"
         args.image_shape = list(image_shape)
         args.channel_mults = list(channel_mults)
+        args.num_images = len(image_paths)
+        log_message(f"num_images: {len(image_paths)}", log_path)
+        log_message(f"patch_size: {args.patch_size}", log_path)
+        log_message(f"stride: {args.stride}", log_path)
         log_message(f"unet_image_shape: {image_shape}", log_path)
 
-    save_config(save_dir / "model_config.json", args)
-    
-    config_all_from_to(
-        Path(args.data).parent,
-        save_dir,
-    )
+        if args.patch_loader == "stream":
+            train_loader, val_loader, train_dataset, val_dataset = make_streaming_image_patch_dataloaders(
+                image_paths=image_paths,
+                patch_size=args.patch_size,
+                stride=args.stride,
+                channels=args.channels,
+                max_patches_per_image=args.max_patches_per_image,
+                input_dim=args.input_dim,
+                batch_size=args.batch_size,
+                val_ratio=args.val_ratio,
+                seed=args.seed,
+                flatten=flatten,
+                **loader_kwargs,
+            )
+            args.num_train_patches = len(train_dataset)
+            args.num_val_patches = len(val_dataset)
+            args.num_patches = args.num_train_patches + args.num_val_patches
+        else:
+            train_loader, val_loader, patch_dataset = make_image_patch_dataloaders(
+                image_paths=image_paths,
+                patch_size=args.patch_size,
+                stride=args.stride,
+                channels=args.channels,
+                max_patches_per_image=args.max_patches_per_image,
+                input_dim=args.input_dim,
+                batch_size=args.batch_size,
+                val_ratio=args.val_ratio,
+                seed=args.seed,
+                flatten=flatten,
+                **loader_kwargs,
+            )
+            args.num_patches = len(patch_dataset)
+            args.num_train_patches = len(train_loader.dataset)
+            args.num_val_patches = len(val_loader.dataset)
 
-    train_loader, val_loader = make_ardae_dataloaders(
-        data=raw_data,
-        input_dim=args.input_dim,
-        batch_size=args.batch_size,
-        val_ratio=args.val_ratio,
-        normalize=args.normalize,
-        flatten=flatten,
-        image_shape=image_shape,
-        seed=args.seed,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
-    )
+        log_message(f"patch_loader: {args.patch_loader}", log_path)
+        log_message(f"num_patches: {args.num_patches}", log_path)
+        log_message(f"num_train_patches: {args.num_train_patches}", log_path)
+        log_message(f"num_val_patches: {args.num_val_patches}", log_path)
+
+    else:
+        raw_data = load_array(args.data, key=args.key)
+        log_message(f"raw_data_shape: {tuple(raw_data.shape)}", log_path)
+
+        if args.backbone == "unet":
+            image_shape = infer_unet_image_shape(raw_data, args.input_dim, args.image_shape)
+            flatten = False
+            args.image_shape = list(image_shape)
+            args.channel_mults = list(channel_mults)
+            log_message(f"unet_image_shape: {image_shape}", log_path)
+
+        train_loader, val_loader = make_ardae_dataloaders(
+            data=raw_data,
+            input_dim=args.input_dim,
+            batch_size=args.batch_size,
+            val_ratio=args.val_ratio,
+            normalize=args.normalize,
+            flatten=flatten,
+            image_shape=image_shape,
+            seed=args.seed,
+            **loader_kwargs,
+        )
+
+        config_all_from_to(
+            Path(args.data).parent,
+            save_dir,
+            prefix="data_",
+        )
+
+    save_config(save_dir / "model_config.json", args)
 
     model = ARDAE(
         input_dim=args.input_dim,
@@ -388,6 +544,7 @@ def main():
         base_channels=args.base_channels,
         channel_mults=channel_mults,
         use_norm=not args.no_norm,
+        use_gaussian_smoothing=config.use_gaussian_smoothing,
     ).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -475,6 +632,9 @@ def main():
 
     last_checkpoint_path = save_dir / f"last_epoch_{args.epochs:04d}.pt"
     save_checkpoint(last_checkpoint_path, model, optimizer, args.epochs, train_loss, val_loss, args)
+    args.last_checkpoint_path = str(last_checkpoint_path)
+    args.best_checkpoint_path = str(best_checkpoint_path) if best_checkpoint_path is not None else None
+    save_config(save_dir / "model_config.json", args)
     log_message(f"saved last checkpoint: {last_checkpoint_path}", log_path)
     log_message(f"saved best checkpoint: {best_checkpoint_path}", log_path)
     log_message(f"saved metrics: {metrics_path}", log_path)

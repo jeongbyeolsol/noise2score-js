@@ -1,6 +1,6 @@
 from .model import softplus, get_nonlinear_func, ConvBlock, UpBlock, DownBlock
 
-from .tensor import expand_tensor
+from .tensor import expand_tensor, load_array, normalize_tensor
 
 from .file import *
 

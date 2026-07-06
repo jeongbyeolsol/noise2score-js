@@ -15,34 +15,80 @@ class Noise2Score(nn.Module):
         ardae,
         noise_type="gaussian",
         noise_param=0.1,
+        score_sigma=None,
         clamp=True,
     ):
         super().__init__()
         self.ardae = ardae
         self.noise_type = noise_type
         self.noise_param = noise_param
+        self.score_sigma = noise_param if score_sigma is None else score_sigma
         self.clamp = clamp
 
     @torch.no_grad()
-    def score(self, y, noise_param=None):
-        noise_param = self.noise_param if noise_param is None else noise_param
-        return self.ardae.glogprob(y, noise_param=noise_param)
+    def score(
+        self,
+        y,
+        noise_param=None,
+        score_sigma=None,
+        smoothing=0.0,
+        smoothing_samples=1,
+    ):
+        noise_param = self._resolve_score_noise_param(noise_param, score_sigma)
+        smoothing = float(smoothing or 0.0)
+        smoothing_samples = int(smoothing_samples)
+
+        if smoothing <= 0.0:
+            return self.ardae.glogprob(y, noise_param=noise_param)
+
+        if smoothing_samples < 1:
+            raise ValueError("smoothing_samples must be >= 1.")
+
+        score_sum = torch.zeros_like(y)
+        for _ in range(smoothing_samples):
+            y_smooth = y + smoothing * torch.randn_like(y)
+            score_sum = score_sum + self.ardae.glogprob(
+                y_smooth,
+                noise_param=noise_param,
+            )
+
+        return score_sum / float(smoothing_samples)
 
     @torch.no_grad()
-    def denoise(self, y, noise_param=None):
-        noise_param = self.noise_param if noise_param is None else noise_param
-        score = self.score(y, noise_param=noise_param)
+    def denoise(
+        self,
+        y,
+        noise_param=None,
+        score_sigma=None,
+        smoothing=0.0,
+        smoothing_samples=1,
+    ):
+        denoise_noise_param = self.noise_param if noise_param is None else noise_param
+        score_noise_param = self._resolve_score_noise_param(
+            noise_param,
+            score_sigma,
+        )
+        score = self.score(
+            y,
+            noise_param=score_noise_param,
+            smoothing=smoothing,
+            smoothing_samples=smoothing_samples,
+        )
+        smoothing = float(smoothing or 0.0)
 
-        if self.noise_type == "gaussian":
-            sigma = noise_param
+        if smoothing > 0.0 and self.noise_type != "gaussian":
+            x_hat = y + smoothing ** 2 * score
+
+        elif self.noise_type == "gaussian":
+            sigma = denoise_noise_param
             x_hat = y + sigma ** 2 * score
 
         elif self.noise_type == "poisson":
-            peak = noise_param
+            peak = denoise_noise_param
             x_hat = (y + 1.0 / (2.0 * peak)) * torch.exp(score / peak)
 
         elif self.noise_type == "gamma":
-            alpha = noise_param
+            alpha = denoise_noise_param
             denom = (alpha - 1.0) - y * score
             denom = denom.clamp_min(1e-6)
             x_hat = alpha * y / denom
@@ -54,6 +100,13 @@ class Noise2Score(nn.Module):
             x_hat = x_hat.clamp(0, 1)
 
         return x_hat
+
+    def _resolve_score_noise_param(self, noise_param=None, score_sigma=None):
+        if score_sigma is not None:
+            return score_sigma
+        if noise_param is not None:
+            return noise_param
+        return self.score_sigma
     
     def _assign_ardae(self, ardae, config: ARDAEConfig = None):
         if isinstance(ardae, ARDAE):
@@ -77,5 +130,6 @@ class Noise2Score(nn.Module):
                  num_hidden_layers = config.num_hidden_layers,
                  nonlinearity = config.nonlinearity,
                  noise_type = config.noise_type,
-                 use_metric = config.use_metric
+                 use_metric = config.use_metric,
+                 use_gaussian_smoothing = config.use_gaussian_smoothing,
             )

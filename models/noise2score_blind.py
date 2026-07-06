@@ -160,6 +160,8 @@ class Noise2ScoreBlind(Noise2Score):
         tv_weight=1.0,
         range_weight=0.0,
         data_weight=0.0,
+        smoothing=0.0,
+        smoothing_samples=1,
         return_history=True,
     ):
         """
@@ -213,6 +215,8 @@ class Noise2ScoreBlind(Noise2Score):
                 y,
                 noise_param=param_value,
                 score_sigma=score_sigma,
+                smoothing=smoothing,
+                smoothing_samples=smoothing_samples,
             )
 
             q = self._blind_quality(

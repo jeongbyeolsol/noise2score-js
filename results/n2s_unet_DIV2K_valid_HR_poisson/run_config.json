@@ -1,0 +1,29 @@
+{
+  "batch_size": 128,
+  "channels": 3,
+  "checkpoint": "checkpoints/ardae_unet/poisson_lam001_005_smoothing/best_model.pt",
+  "clean_data": "datasets/DIV2K_valid_HR_processed",
+  "copy_info": true,
+  "data_mode": "image-folder",
+  "device": "cuda",
+  "image_shape": [
+    3,
+    128,
+    128
+  ],
+  "input_dim": 49152,
+  "key": null,
+  "max_patches_per_image": 128,
+  "noise_param": 50.0,
+  "noise_type": "poisson",
+  "num_workers": 1,
+  "output_dir": "results/n2s_unet_DIV2K_valid_HR_poisson",
+  "patch_size": 128,
+  "recursive_images": true,
+  "save_output": true,
+  "save_output_limit": 64,
+  "score_sigma": 0.1,
+  "smoothing": 0.1,
+  "smoothing_samples": 8,
+  "stride": 128
+}

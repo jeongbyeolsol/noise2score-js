@@ -2,80 +2,61 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import (
+    ConcatDataset,
+    DataLoader,
+#    Dataset,
+#    IterableDataset,
+#    get_worker_info,
+    random_split,
+)
+from .classes import (
+    ARDAEDataset,
+    ImagePatchDataset,
+    StreamingImagePatchDataset,
+)
+from utils import load_array, normalize_tensor
 
 
-class ARDAEDataset(Dataset):
-    """
-    ARDAE 학습용 데이터셋.
+IMAGE_EXTENSIONS = {
+    ".bmp",
+    ".jpeg",
+    ".jpg",
+    ".npy",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
 
-    MLP ARDAE는 [N, input_dim], U-Net ARDAE는 [N, C, H, W] 형태를 사용한다.
-    """
 
-    def __init__(
-        self,
-        data,
-        input_dim=None,
-        normalize=None,
-        flatten=True,
-        image_shape=None,
-        dtype=torch.float32,
-    ):
-        self.x = preprocess_ardae_data(
-            data=data,
-            input_dim=input_dim,
-            normalize=normalize,
-            flatten=flatten,
-            image_shape=image_shape,
-            dtype=dtype,
+
+def find_image_paths(path, recursive=False):
+    path = Path(path)
+    if path.is_file():
+        if path.suffix.lower() in IMAGE_EXTENSIONS:
+            return [path]
+        with path.open("r", encoding="utf-8") as f:
+            base_dir = path.parent
+            image_paths = []
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                item = Path(line)
+                if not item.is_absolute():
+                    item = base_dir / item
+                image_paths.append(item)
+            return image_paths
+
+    if path.is_dir():
+        pattern = "**/*" if recursive else "*"
+        return sorted(
+            p for p in path.glob(pattern)
+            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
         )
 
-    def __len__(self):
-        return self.x.size(0)
-
-    def __getitem__(self, index):
-        return self.x[index]
-
-
-def load_array(path, key=None):
-    """
-    csv/txt/tsv, npy/npz, pt/pth 파일을 torch.Tensor로 읽는다.
-
-    npz 또는 dict 형태의 pt/pth 파일은 key가 필요할 수 있다.
-    key가 없고 항목이 하나뿐이면 그 항목을 자동으로 사용한다.
-    """
-    path = Path(path)
-    suffix = path.suffix.lower()
-
-    if suffix in {".csv", ".txt", ".tsv"}:
-        delimiter = "," if suffix == ".csv" else None
-        array = np.loadtxt(path, delimiter=delimiter)
-        return torch.as_tensor(array)
-
-    if suffix == ".npy":
-        return torch.as_tensor(np.load(path))
-
-    if suffix == ".npz":
-        archive = np.load(path)
-        if key is None:
-            if len(archive.files) != 1:
-                raise ValueError(f"key must be given for {path}; found keys: {archive.files}")
-            key = archive.files[0]
-        return torch.as_tensor(archive[key])
-
-    if suffix in {".pt", ".pth"}:
-        obj = torch.load(path, map_location="cpu")
-        if torch.is_tensor(obj):
-            return obj
-        if isinstance(obj, dict):
-            if key is None:
-                if len(obj) != 1:
-                    raise ValueError(f"key must be given for {path}; found keys: {list(obj.keys())}")
-                key = next(iter(obj))
-            return torch.as_tensor(obj[key])
-        return torch.as_tensor(obj)
-
-    raise ValueError(f"Unsupported data file type: {suffix}")
+    raise FileNotFoundError(f"Image path not found: {path}")
 
 
 def _normalize_image_shape(image_shape):
@@ -166,21 +147,6 @@ def preprocess_ardae_data(
     return x.contiguous()
 
 
-def normalize_tensor(x, method="standard", eps=1e-8):
-    # MLP [N, D]뿐 아니라 이미지 [N, C, H, W]도 sample 차원 기준으로 정규화한다.
-    reduce_dims = (0,)
-
-    if method == "standard":
-        mean = x.mean(dim=reduce_dims, keepdim=True)
-        std = x.std(dim=reduce_dims, keepdim=True).clamp_min(eps)
-        return (x - mean) / std
-
-    if method in {"minmax", "zero_one"}:
-        x_min = x.amin(dim=reduce_dims, keepdim=True)
-        x_max = x.amax(dim=reduce_dims, keepdim=True)
-        return (x - x_min) / (x_max - x_min).clamp_min(eps)
-
-    raise ValueError(f"Unknown normalize method: {method}")
 
 
 def make_ardae_dataset(
@@ -262,6 +228,227 @@ def make_ardae_dataloaders(
         **loader_kwargs,
     )
     return train_loader, val_loader
+
+
+def make_image_patch_dataloaders(
+    image_paths,
+    patch_size,
+    stride,
+    channels=1,
+    max_patches_per_image=None,
+    input_dim=None,
+    batch_size=128,
+    val_ratio=0.1,
+    seed=0,
+    flatten=False,
+    dtype=torch.float32,
+    split_by_image=True,
+    **loader_kwargs,
+):
+    if input_dim is not None:
+        expected_dim = channels * patch_size * patch_size
+        if int(input_dim) != expected_dim:
+            raise ValueError(
+                f"input_dim={input_dim} does not match "
+                f"channels*patch_size^2={expected_dim}."
+            )
+
+    image_paths = list(image_paths)
+
+    if len(image_paths) == 0:
+        raise ValueError("image_paths is empty.")
+
+    if split_by_image:
+        rng = np.random.default_rng(seed)
+        indices = np.arange(len(image_paths))
+        rng.shuffle(indices)
+
+        val_image_count = int(len(image_paths) * val_ratio)
+
+        if val_ratio > 0:
+            val_image_count = max(1, val_image_count)
+
+        train_image_count = len(image_paths) - val_image_count
+
+        if train_image_count <= 0:
+            raise ValueError(
+                "Train image split is empty. Reduce val_ratio or provide more images."
+            )
+
+        val_indices = indices[:val_image_count]
+        train_indices = indices[val_image_count:]
+
+        train_paths = [image_paths[i] for i in train_indices]
+        val_paths = [image_paths[i] for i in val_indices]
+
+        train_dataset = ImagePatchDataset(
+            image_paths=train_paths,
+            patch_size=patch_size,
+            stride=stride,
+            channels=channels,
+            max_patches_per_image=max_patches_per_image,
+            seed=seed,
+            flatten=flatten,
+            dtype=dtype,
+        )
+
+        val_dataset = ImagePatchDataset(
+            image_paths=val_paths,
+            patch_size=patch_size,
+            stride=stride,
+            channels=channels,
+            max_patches_per_image=max_patches_per_image,
+            seed=seed + 1,
+            flatten=flatten,
+            dtype=dtype,
+        )
+
+        full_dataset = ConcatDataset([train_dataset, val_dataset])
+
+    else:
+        full_dataset = ImagePatchDataset(
+            image_paths=image_paths,
+            patch_size=patch_size,
+            stride=stride,
+            channels=channels,
+            max_patches_per_image=max_patches_per_image,
+            seed=seed,
+            flatten=flatten,
+            dtype=dtype,
+        )
+
+        n = len(full_dataset)
+        val_size = int(n * val_ratio)
+
+        if val_ratio > 0:
+            val_size = max(1, val_size)
+
+        train_size = n - val_size
+
+        if train_size <= 0:
+            raise ValueError(
+                "Train dataset is empty. Reduce val_ratio or provide more data."
+            )
+
+        generator = torch.Generator().manual_seed(seed)
+
+        train_dataset, val_dataset = random_split(
+            full_dataset,
+            [train_size, val_size],
+            generator=generator,
+        )
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        **loader_kwargs,
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        **loader_kwargs,
+    )
+
+    return train_loader, val_loader, full_dataset
+
+
+def split_image_paths(image_paths, val_ratio=0.1, seed=0):
+    image_paths = list(image_paths)
+    if len(image_paths) == 0:
+        raise ValueError("image_paths is empty.")
+    if not 0.0 <= val_ratio < 1.0:
+        raise ValueError("val_ratio must be in [0, 1).")
+
+    rng = np.random.default_rng(seed)
+    indices = np.arange(len(image_paths))
+    rng.shuffle(indices)
+
+    val_count = int(len(image_paths) * val_ratio)
+    if val_ratio > 0:
+        val_count = max(1, val_count)
+
+    train_count = len(image_paths) - val_count
+    if train_count <= 0:
+        raise ValueError("Train image split is empty. Reduce val_ratio.")
+
+    val_indices = indices[:val_count]
+    train_indices = indices[val_count:]
+    train_paths = [image_paths[int(i)] for i in train_indices]
+    val_paths = [image_paths[int(i)] for i in val_indices]
+    return train_paths, val_paths
+
+
+def make_streaming_image_patch_dataloaders(
+    image_paths,
+    patch_size,
+    stride,
+    channels=1,
+    max_patches_per_image=None,
+    input_dim=None,
+    batch_size=128,
+    val_ratio=0.1,
+    seed=0,
+    flatten=False,
+    dtype=torch.float32,
+    **loader_kwargs,
+):
+    if input_dim is not None:
+        expected_dim = channels * patch_size * patch_size
+        if int(input_dim) != expected_dim:
+            raise ValueError(
+                f"input_dim={input_dim} does not match "
+                f"channels*patch_size^2={expected_dim}."
+            )
+
+    train_paths, val_paths = split_image_paths(
+        image_paths=image_paths,
+        val_ratio=val_ratio,
+        seed=seed,
+    )
+
+    train_dataset = StreamingImagePatchDataset(
+        image_paths=train_paths,
+        patch_size=patch_size,
+        stride=stride,
+        channels=channels,
+        max_patches_per_image=max_patches_per_image,
+        seed=seed,
+        flatten=flatten,
+        dtype=dtype,
+        shuffle_images=True,
+        shuffle_patches=True,
+    )
+
+    if len(val_paths) > 0:
+        val_dataset = StreamingImagePatchDataset(
+            image_paths=val_paths,
+            patch_size=patch_size,
+            stride=stride,
+            channels=channels,
+            max_patches_per_image=max_patches_per_image,
+            seed=seed + 100000,
+            flatten=flatten,
+            dtype=dtype,
+            shuffle_images=False,
+            shuffle_patches=False,
+        )
+    else:
+        val_dataset = []
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        **loader_kwargs,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        **loader_kwargs,
+    )
+    return train_loader, val_loader, train_dataset, val_dataset
 
 
 def load_ardae_dataset(

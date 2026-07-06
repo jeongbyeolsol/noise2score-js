@@ -85,7 +85,20 @@ def _make_json_serializable(obj):
 
     return obj
 
-def file_from_to(src, dst, *, new_name=None, overwrite=False):
+def make_unique_file_path(path):
+    path = Path(path)
+    if not path.exists():
+        return path
+
+    for index in range(1, 10000):
+        candidate = path.with_name(f"{path.stem}_{index:03d}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+
+    raise RuntimeError(f"Could not find an unused file path for {path}")
+
+
+def file_from_to(src, dst, *, new_name=None, overwrite=False, on_conflict="error"):
     src = Path(src)
     dst = Path(dst)
 
@@ -109,6 +122,17 @@ def file_from_to(src, dst, *, new_name=None, overwrite=False):
         dst_file = dst
 
     if dst_file.exists() and not overwrite:
+        if on_conflict == "suffix":
+            dst_file = make_unique_file_path(dst_file)
+        elif on_conflict != "error":
+            raise ValueError("on_conflict must be 'error' or 'suffix'.")
+        else:
+            raise FileExistsError(
+                f"Destination already exists: {dst_file}\n"
+                f"Use overwrite=True to replace it."
+            )
+
+    if dst_file.exists() and not overwrite:
         raise FileExistsError(
             f"Destination already exists: {dst_file}\n"
             f"Use overwrite=True to replace it."
@@ -124,9 +148,11 @@ def config_all_from_to(
     *,
     new_name=None,
     prefix=None,
+    suffix=None,
     dst_subdir=None,
     recursive=False,
     overwrite=False,
+    on_conflict="suffix",
     strict=False,
     is_csv=False
 ):
@@ -149,6 +175,9 @@ def config_all_from_to(
     prefix : str | None
         복사되는 파일명 앞에 붙일 prefix.
         예: prefix="data_"이면 config.json -> data_config.json
+    suffix : str | None
+        복사되는 파일명 stem 뒤에 붙일 suffix.
+        예: suffix="_data"이면 config.json -> config_data.json
 
     dst_subdir : str | None
         dst_dir 아래에 따로 config들을 모을 하위 폴더명.
@@ -159,6 +188,10 @@ def config_all_from_to(
 
     overwrite : bool
         대상 파일이 이미 있을 때 덮어쓸지 여부.
+
+    on_conflict : {"suffix", "error"}
+        overwrite=False이고 대상 파일이 이미 있을 때 처리 방식.
+        "suffix"이면 _001, _002처럼 자동 suffix를 붙입니다.
 
     strict : bool
         True면 json 파일이 없을 때 에러를 냅니다.
@@ -183,8 +216,8 @@ def config_all_from_to(
     if not src_dir.is_dir():
         raise NotADirectoryError(f"src_dir must be a directory: {src_dir}")
 
-    suffix = '.json' if not is_csv else '.csv'
-    pattern = "**/*"+suffix if recursive else "*" + suffix
+    extension = '.json' if not is_csv else '.csv'
+    pattern = "**/*"+extension if recursive else "*" + extension
     json_paths = sorted(p for p in src_dir.glob(pattern) if p.is_file())
     
     if recursive and _has_duplicate_filenames(json_paths):
@@ -194,15 +227,15 @@ def config_all_from_to(
         )
 
     if len(json_paths) == 0:
-        msg = f"No {suffix} files found in: {src_dir}"
+        msg = f"No {extension} files found in: {src_dir}"
         if strict:
             raise FileNotFoundError(msg)
         return []
 
     if new_name is not None and len(json_paths) > 1:
         raise ValueError(
-            f"new_name can only be used when exactly one {suffix} file is found. "
-            f"Use prefix=... or dst_subdir=... for multiple {suffix} files."
+            f"new_name can only be used when exactly one {extension} file is found. "
+            f"Use prefix=... or dst_subdir=... for multiple {extension} files."
         )
 
     copied_paths = []
@@ -214,14 +247,17 @@ def config_all_from_to(
                 dst_dir,
                 new_name=new_name,
                 overwrite=overwrite,
+                on_conflict=on_conflict,
             )
 
-        elif prefix is not None:
+        elif prefix is not None or suffix is not None:
+            stem_suffix = "" if suffix is None else suffix
             copied_path = file_from_to(
                 src_path,
                 dst_dir,
-                new_name=f"{prefix}{src_path.name}",
+                new_name=f"{prefix or ''}{src_path.stem}{stem_suffix}{src_path.suffix}",
                 overwrite=overwrite,
+                on_conflict=on_conflict,
             )
 
         else:
@@ -230,6 +266,7 @@ def config_all_from_to(
                 dst_dir,
                 new_name=src_path.name,
                 overwrite=overwrite,
+                on_conflict=on_conflict,
             )
 
         copied_paths.append(copied_path)
