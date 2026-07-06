@@ -22,7 +22,12 @@ from data import (
     preprocess_ardae_data,
 )
 from models.noise2score import Noise2Score
-from scripts.test_ardae import run_test
+from scripts.test_ardae import (
+    build_model as build_ardae_test_model,
+    evaluate as evaluate_ardae,
+    run_test,
+    write_metrics_csv as write_ardae_metrics_csv,
+)
 from scripts.train_ardae import run_training
 from utils import (
     add_observation_noise,
@@ -110,6 +115,7 @@ def parse_args():
     parser.add_argument("--ardae-train-data", type=str, default=None, help="Training data for ARDAE. Defaults to --clean-data.")
     parser.add_argument("--ardae-train-data-mode", type=str, default=None, choices=["array", "image-folder"])
     parser.add_argument("--ardae-test-data", type=str, default=None, help="Test data for ARDAE. Defaults to --clean-data.")
+    parser.add_argument("--ardae-test-data-mode", type=str, default=None, choices=["array", "image-folder"])
     parser.add_argument("--ardae-max-patches-per-image", type=int, default=None)
     parser.add_argument("--ardae-save-dir", type=str, default="checkpoints/ardae")
     parser.add_argument("--ardae-test-output-dir", type=str, default=None)
@@ -223,6 +229,147 @@ def build_ardae_test_args(args, checkpoint):
     )
 
 
+def infer_path_data_mode(path, fallback="array"):
+    if path is None:
+        return fallback
+    path = Path(path)
+    if path.is_dir():
+        return "image-folder"
+    return fallback
+
+
+def normalize_data_modes(args):
+    eval_data_path = args.noisy_data or args.clean_data
+    if args.data_mode == "array":
+        args.data_mode = infer_path_data_mode(eval_data_path, fallback=args.data_mode)
+
+    if args.ardae_train_data_mode is None:
+        args.ardae_train_data_mode = infer_path_data_mode(
+            args.ardae_train_data or args.clean_data,
+            fallback=args.data_mode,
+        )
+
+    if args.ardae_test_data_mode is None:
+        args.ardae_test_data_mode = infer_path_data_mode(
+            args.ardae_test_data or args.clean_data,
+            fallback=args.data_mode,
+        )
+
+
+def run_ardae_image_folder_test(args, checkpoint):
+    test_args = build_ardae_test_args(args, checkpoint)
+    set_seed(test_args.seed)
+
+    device = torch.device(test_args.device)
+    checkpoint_path = Path(test_args.checkpoint)
+    checkpoint_obj = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    model, model_config, ckpt_args = build_ardae_test_model(
+        checkpoint_obj,
+        test_args,
+        device,
+    )
+
+    image_shape = normalize_image_shape_arg(args.image_shape)
+    if image_shape is None:
+        image_shape = normalize_image_shape_arg(ckpt_args.get("image_shape"))
+    if image_shape is None:
+        if args.patch_size is None:
+            raise ValueError(
+                "--test-ardae with image-folder data requires --image-shape or --patch-size."
+            )
+        image_shape = (args.channels, args.patch_size, args.patch_size)
+
+    channels, height, width = image_shape
+    if args.patch_size is None:
+        args.patch_size = height
+    if args.stride is None:
+        args.stride = args.patch_size
+    args.channels = channels
+
+    image_paths = find_image_paths(test_args.data, recursive=args.recursive_images)
+    if len(image_paths) == 0:
+        raise ValueError(f"No image/npy files found in {test_args.data}.")
+
+    dataset = StreamingImagePatchDataset(
+        image_paths=image_paths,
+        patch_size=args.patch_size,
+        stride=args.stride,
+        channels=args.channels,
+        max_patches_per_image=(
+            args.ardae_max_patches_per_image
+            if args.ardae_max_patches_per_image is not None
+            else args.max_patches_per_image
+        ),
+        seed=test_args.seed,
+        flatten=(model_config["backbone"] != "unet"),
+        dtype=torch.float32,
+        shuffle_images=False,
+        shuffle_patches=False,
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=test_args.batch_size,
+        num_workers=test_args.num_workers,
+        pin_memory=device.type == "cuda",
+    )
+
+    output_dir = test_args.output_dir
+    if output_dir is None:
+        output_dir = checkpoint_path.parent / "tests" / checkpoint_path.stem
+    output_dir = make_unique_save_dir(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=False)
+
+    tqdm.write(f"checkpoint: {checkpoint_path}")
+    tqdm.write(f"data: {test_args.data}")
+    tqdm.write(f"num_images: {len(image_paths)}")
+    tqdm.write(f"num_patches: {len(dataset)}")
+    tqdm.write(f"device: {device}")
+    tqdm.write(f"output_dir: {output_dir}")
+
+    result = evaluate_ardae(
+        model=model,
+        loader=loader,
+        device=device,
+        max_batches=test_args.max_batches,
+        save_samples=test_args.save_samples,
+    )
+
+    summary = {
+        "checkpoint": str(checkpoint_path),
+        "checkpoint_epoch": checkpoint_obj.get("epoch", None),
+        "data": test_args.data,
+        "data_mode": "image-folder",
+        "num_images": len(image_paths),
+        "num_patches": len(dataset),
+        "checkpoint_train_loss": checkpoint_obj.get("train_loss", None),
+        "checkpoint_val_loss": checkpoint_obj.get("val_loss", None),
+        "device": str(device),
+        "model": model_config,
+        "batch_size": test_args.batch_size,
+        "max_batches": test_args.max_batches,
+        "loss": result["loss"],
+        "num_samples": result["num_samples"],
+        "metrics": result["metrics"],
+    }
+
+    save_config(output_dir / "summary.json", summary)
+    write_ardae_metrics_csv(output_dir / "metrics.csv", summary)
+
+    if result["sample_x"] is not None:
+        np.savez(
+            output_dir / "samples.npz",
+            x=result["sample_x"],
+            score=result["sample_score"],
+        )
+
+    return {
+        "output_dir": output_dir,
+        "summary_path": output_dir / "summary.json",
+        "metrics_path": output_dir / "metrics.csv",
+        "summary": summary,
+    }
+
+
 def resolve_checkpoint(args):
     ardae_train_result = None
     ardae_test_result = None
@@ -238,12 +385,15 @@ def resolve_checkpoint(args):
         raise ValueError("--checkpoint is required unless --train-ardae is enabled.")
 
     if args.test_ardae:
-        if args.data_mode != "array" and args.ardae_test_data is None:
-            raise ValueError(
-                "--test-ardae uses scripts/test_ardae.py, which expects an array file. "
-                "Pass --ardae-test-data or run with --data-mode array."
-            )
-        ardae_test_result = run_test(build_ardae_test_args(args, checkpoint))
+        test_data = args.ardae_test_data or args.clean_data
+        test_data_mode = args.ardae_test_data_mode or infer_path_data_mode(
+            test_data,
+            fallback=args.data_mode,
+        )
+        if test_data_mode == "image-folder":
+            ardae_test_result = run_ardae_image_folder_test(args, checkpoint)
+        else:
+            ardae_test_result = run_test(build_ardae_test_args(args, checkpoint))
 
     return Path(checkpoint), ardae_train_result, ardae_test_result
 
@@ -556,6 +706,7 @@ def main():
     args = parse_args()
     if args.clean_data is None and args.noisy_data is None:
         raise ValueError("Provide --clean-data for synthetic-noise eval or --noisy-data for denoising noisy inputs.")
+    normalize_data_modes(args)
     if args.smoothing < 0:
         raise ValueError("--smoothing must be >= 0.")
     if args.smoothing > 0 and args.smoothing_samples < 1:
@@ -658,7 +809,7 @@ def main():
         
         if args.save_output and saved_count < args.save_output_limit:
             remain = args.save_output_limit - saved_count
-            take = min(remain, x.size(0))
+            take = min(remain, y.size(0))
 
             if x is not None:
                 save_clean.append(x[:take].detach().cpu())

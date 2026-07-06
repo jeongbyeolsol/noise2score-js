@@ -1,0 +1,51 @@
+{
+  "ardae_test": {
+    "loss": 0.32205700991200464,
+    "metrics": {
+      "pred_energy": 27.16748862173043,
+      "score_corr": 0.9109432101249695,
+      "score_cos": 0.9104252936793309,
+      "score_mse": 32.20570044424019,
+      "score_nmse": 0.3223251729619269,
+      "target_energy": 99.91643883200253
+    },
+    "metrics_path": "results/bsd_gaussian_unet_train_test_eval_128_ardae_test/metrics.csv",
+    "num_samples": 408,
+    "output_dir": "results/bsd_gaussian_unet_train_test_eval_128_ardae_test",
+    "summary_path": "results/bsd_gaussian_unet_train_test_eval_128_ardae_test/summary.json"
+  },
+  "ardae_train": {
+    "best_checkpoint_path": "checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001/best_model.pt",
+    "best_epoch": 51,
+    "best_val_loss": 0.5737070441246033,
+    "last_checkpoint_path": "checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001/last_epoch_0064.pt",
+    "metrics_path": "checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001/metrics.csv",
+    "save_dir": "checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001"
+  },
+  "backbone": "unet",
+  "checkpoint": "checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001/best_model.pt",
+  "clean_data": "datasets/BSD68_processed",
+  "clean_dtype": "torch.float32",
+  "data_mode": "image-folder",
+  "denoised_mse": 0.003010328895613259,
+  "denoised_psnr": 25.21386052663044,
+  "image_shape": [
+    1,
+    128,
+    128
+  ],
+  "improved_mse": true,
+  "input_mode": "synthetic",
+  "noise_param": 0.1,
+  "noise_type": "gaussian",
+  "noisy_data": null,
+  "noisy_mse": 0.00935889665475663,
+  "noisy_psnr": 20.287753483767915,
+  "num_samples": 408,
+  "output_dir": "results/n2s_bsd_gaussian_unet_train_test_eval_128",
+  "requested_output_dir": "results/n2s_bsd_gaussian_unet_train_test_eval_128",
+  "score_clean_direction_cos": 0.9007706081165987,
+  "score_sigma": 0.1,
+  "smoothing": 0.0,
+  "smoothing_samples": 8
+}

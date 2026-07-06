@@ -166,8 +166,8 @@ class StreamingImagePatchDataset(IterableDataset):
     """
     이미지 단위로 순회하며 patch를 yield하는 빠른 데이터셋.
 
-    기존 인터페이스는 유지하되, image_paths는 이제 이미지 파일 경로가 아니라
-    이미지 하나당 하나씩 저장된 .npy 파일 경로를 받는다.
+    이미지 하나당 하나씩 저장된 .npy 파일과 PNG/JPEG 같은 일반 이미지 파일을
+    모두 받을 수 있다.
 
     기대하는 npy shape:
         channels=1: [H, W] 또는 [H, W, 1] 또는 [1, H, W]
@@ -211,11 +211,11 @@ class StreamingImagePatchDataset(IterableDataset):
         if self.channels not in (1, 3):
             raise ValueError("channels must be 1 or 3.")
         if len(self.image_paths) == 0:
-            raise ValueError("No npy files found.")
+            raise ValueError("No image/npy files found.")
 
         self._length = 0
         for image_idx, path in enumerate(self.image_paths):
-            height, width = self._read_npy_hw(path)
+            height, width = self._read_hw(path)
             coords = self._make_patch_coords(
                 width=width,
                 height=height,
@@ -225,7 +225,7 @@ class StreamingImagePatchDataset(IterableDataset):
 
         if self._length == 0:
             raise ValueError(
-                "No patches could be extracted. Check patch_size/stride and npy image sizes."
+                "No patches could be extracted. Check patch_size/stride and image sizes."
             )
 
     def __len__(self):
@@ -255,7 +255,7 @@ class StreamingImagePatchDataset(IterableDataset):
             image_idx = int(image_idx)
             path = self.image_paths[image_idx]
 
-            image = self._load_npy_image(path)
+            image = self._load_image_array(path)
             height, width = image.shape[:2]
 
             coords = self._make_patch_coords(
@@ -279,6 +279,15 @@ class StreamingImagePatchDataset(IterableDataset):
                     tensor = tensor.reshape(-1)
 
                 yield tensor.contiguous()
+
+    @staticmethod
+    def _is_npy(path):
+        return Path(path).suffix.lower() == ".npy"
+
+    def _read_hw(self, path):
+        if self._is_npy(path):
+            return self._read_npy_hw(path)
+        return self._read_raster_hw(path)
 
     def _read_npy_hw(self, path):
         arr = np.load(path, mmap_mode="r")
@@ -324,6 +333,16 @@ class StreamingImagePatchDataset(IterableDataset):
 
         raise ValueError(f"Unsupported channels={self.channels}")
 
+    def _read_raster_hw(self, path):
+        with ImagePatchDataset._open_image(path) as image:
+            width, height = image.size
+        return int(height), int(width)
+
+    def _load_image_array(self, path):
+        if self._is_npy(path):
+            return self._load_npy_image(path)
+        return self._load_raster_image(path)
+
     def _load_npy_image(self, path):
         image = np.load(path)
 
@@ -363,8 +382,13 @@ class StreamingImagePatchDataset(IterableDataset):
 
         raise ValueError(f"Unsupported channels={self.channels}")
 
+    def _load_raster_image(self, path):
+        mode = "L" if self.channels == 1 else "RGB"
+        with ImagePatchDataset._open_image(path) as image:
+            return np.asarray(image.convert(mode)).copy()
+
     def _patch_to_tensor(self, patch):
-        # npy가 mmap 또는 non-contiguous slice일 수 있으므로 copy()로 안전하게 tensor화
+        # mmap 또는 non-contiguous slice일 수 있으므로 copy()로 안전하게 tensor화
         if self.channels == 1:
             tensor = torch.as_tensor(patch.copy(), dtype=self.dtype).unsqueeze(0)
         else:

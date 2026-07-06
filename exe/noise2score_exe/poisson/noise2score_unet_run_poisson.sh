@@ -39,5 +39,5 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score.py \
   --score-sigma 0.1 \
   --smoothing 0.1 \
   --stitch-output \
-  --stitch-format both #\
+  --stitch-format png #\
   #--save-output-limit 64

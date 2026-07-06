@@ -17,8 +17,8 @@ SHAPE="${SHAPE:-128}"
 CHANNELS="${CHANNELS:-1}"
 INPUT_DIM="${INPUT_DIM:-$((CHANNELS * SHAPE * SHAPE))}"
 
-TRAIN_DATA="${TRAIN_DATA:-datasets/processed/bsd400_patches_${SHAPE}x${SHAPE}.npy}"
-TEST_DATA="${TEST_DATA:-datasets/processed_test/bsd68_patches_${SHAPE}x${SHAPE}.npy}"
+TRAIN_DATA="${TRAIN_DATA:-datasets/BSD400_processed}"
+TEST_DATA="${TEST_DATA:-datasets/BSD68_processed}"
 CLEAN_DATA="${CLEAN_DATA:-$TEST_DATA}"
 
 BATCH_SIZE="${BATCH_SIZE:-128}"
@@ -60,4 +60,7 @@ CUDA_VISIBLE_DEVICES="$GPU" "$PYTHON_BIN" ./scripts/run_noise2score.py \
   --output-dir "$OUTPUT_DIR" \
   --save-output \
   --save-output-limit "${SAVE_OUTPUT_LIMIT:-64}" \
-  --copy-info
+  --copy-info \
+  --stitch-output \
+  --ardae-train-data-mode image-folder \
+  --stitch-format png
