@@ -234,3 +234,37 @@ Use `.npy` folders with:
 
 The map loader is intentionally blocked for `.npy` folders because it is the
 PIL image random-access path.
+
+## 12. Noise2Score NPY Evaluation
+
+Updated Noise2Score evaluation scripts to read per-image `.npy` folders too:
+
+```text
+scripts/run_noise2score.py
+scripts/run_noise2score_blind.py
+```
+
+New evaluation options:
+
+```bash
+--data-mode image-folder \
+--patch-size 128 \
+--stride 128 \
+--channels 3 \
+--max-patches-per-image 128 \
+--recursive-images
+```
+
+The evaluation loader uses `StreamingImagePatchDataset`, so it can read:
+
+```text
+datasets/DIV2K_valid_HR_processed/
+  0801.npy
+  0802.npy
+  ...
+```
+
+without concatenating everything into one giant array.
+
+Also fixed evaluation batch handling so both `TensorDataset` batches and direct
+streamed tensor batches work.

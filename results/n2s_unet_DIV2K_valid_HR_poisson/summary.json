@@ -1,0 +1,26 @@
+{
+  "backbone": "unet",
+  "checkpoint": "checkpoints/ardae_unet/poisson_lam001_005_smoothing/best_model.pt",
+  "clean_data": "datasets/DIV2K_valid_HR_processed",
+  "clean_dtype": "torch.float32",
+  "data_mode": "image-folder",
+  "denoised_mse": 0.002053530046708441,
+  "denoised_psnr": 26.874989382818608,
+  "image_shape": [
+    3,
+    128,
+    128
+  ],
+  "improved_mse": true,
+  "noise_param": 50.0,
+  "noise_type": "poisson",
+  "noisy_mse": 0.00760131175424474,
+  "noisy_psnr": 21.19111455288691,
+  "num_samples": 12746,
+  "output_dir": "results/n2s_unet_DIV2K_valid_HR_poisson",
+  "requested_output_dir": "results/n2s_unet_DIV2K_valid_HR_poisson",
+  "score_clean_direction_cos": 0.8402142347018273,
+  "score_sigma": 0.1,
+  "smoothing": 0.1,
+  "smoothing_samples": 8
+}

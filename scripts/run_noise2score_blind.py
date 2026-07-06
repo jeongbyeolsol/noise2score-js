@@ -16,7 +16,12 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from data import load_array, preprocess_ardae_data
+from data import (
+    StreamingImagePatchDataset,
+    find_image_paths,
+    load_array,
+    preprocess_ardae_data,
+)
 from models.ardae import ARDAE
 from utils import add_gaussian_noise, add_poisson_noise, add_gamma_noise
 from utils import make_unique_save_dir, save_config, config_all_from_to
@@ -38,10 +43,18 @@ def parse_args():
 
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--clean-data", type=str, required=True)
+    parser.add_argument(
+        "--data-mode",
+        type=str,
+        default="array",
+        choices=["array", "image-folder"],
+        help="array reads one array file; image-folder streams image or per-image npy files.",
+    )
     parser.add_argument("--key", type=str, default=None)
 
     parser.add_argument("--input-dim", type=int, required=True)
     parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument(
         "--device",
         type=str,
@@ -54,6 +67,11 @@ def parse_args():
         default=None,
         help="Override/restore UNet image shape: C H W or H W.",
     )
+    parser.add_argument("--patch-size", type=int, default=None, help="Patch size for --data-mode image-folder.")
+    parser.add_argument("--stride", type=int, default=None, help="Patch stride for --data-mode image-folder.")
+    parser.add_argument("--channels", type=int, default=1, choices=[1, 3], help="Channels for streamed image/npy folder data.")
+    parser.add_argument("--max-patches-per-image", type=int, default=None)
+    parser.add_argument("--recursive-images", action="store_true")
 
     parser.add_argument(
         "--noise-type",
@@ -234,6 +252,95 @@ def load_ardae_from_checkpoint(path, input_dim, device, clean=None, image_shape_
     return model, backbone, image_shape
 
 
+def infer_stream_shape(args, ckpt_image_shape=None):
+    image_shape = normalize_image_shape_arg(args.image_shape)
+    if image_shape is None:
+        image_shape = normalize_image_shape_arg(ckpt_image_shape)
+    if image_shape is None:
+        if args.patch_size is None:
+            raise ValueError(
+                "--data-mode image-folder requires --image-shape or --patch-size."
+            )
+        image_shape = (args.channels, args.patch_size, args.patch_size)
+
+    channels, height, width = image_shape
+    if height != width:
+        raise ValueError("Streamed patch evaluation currently requires square patches.")
+    if args.patch_size is None:
+        args.patch_size = height
+    if args.patch_size != height or args.patch_size != width:
+        raise ValueError(
+            f"--patch-size {args.patch_size} does not match image_shape {image_shape}."
+        )
+    if args.stride is None:
+        args.stride = args.patch_size
+    args.channels = channels
+    return image_shape
+
+
+def make_clean_loader(args, backbone, image_shape, device, raw_clean=None):
+    if args.data_mode == "array":
+        if raw_clean is None:
+            raw_clean = load_array(args.clean_data, key=args.key)
+        raw_clean = raw_clean.float()
+        if raw_clean.max() > 1.5:
+            raw_clean = raw_clean / 255.0
+
+        clean = preprocess_ardae_data(
+            data=raw_clean.clamp(0, 1),
+            input_dim=args.input_dim,
+            normalize=None,
+            flatten=(backbone != "unet"),
+            image_shape=image_shape,
+        )
+
+        loader = DataLoader(
+            TensorDataset(clean),
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=device.type == "cuda",
+        )
+        return loader, len(clean), str(clean.dtype)
+
+    clean_paths = find_image_paths(args.clean_data, recursive=args.recursive_images)
+    if len(clean_paths) == 0:
+        raise ValueError(f"No image/npy files found in {args.clean_data}.")
+
+    dataset = StreamingImagePatchDataset(
+        image_paths=clean_paths,
+        patch_size=args.patch_size,
+        stride=args.stride,
+        channels=args.channels,
+        max_patches_per_image=args.max_patches_per_image,
+        seed=0,
+        flatten=(backbone != "unet"),
+        dtype=torch.float32,
+        shuffle_images=False,
+        shuffle_patches=False,
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=device.type == "cuda",
+    )
+    args.num_clean_files = len(clean_paths)
+    args.num_patches = len(dataset)
+    return loader, len(dataset), "torch.float32"
+
+
+def info_dir_for(path):
+    path = Path(path)
+    return path if path.is_dir() else path.parent
+
+
+def move_batch(batch, device):
+    if isinstance(batch, (tuple, list)):
+        batch = batch[0]
+    return batch.to(device, non_blocking=True)
+
+
 def get_score_sigma(args, candidate_param):
     if args.score_sigma_mode == "same":
         return candidate_param
@@ -297,31 +404,29 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     save_config(output_dir / "run_config.json", args)
 
-    raw_clean = load_array(args.clean_data, key=args.key).float()
-
-    if raw_clean.max() > 1.5:
-        raw_clean = raw_clean / 255.0
+    ckpt = torch.load(args.checkpoint, map_location="cpu")
+    ckpt_image_shape = ckpt.get("args", {}).get("image_shape")
+    raw_clean = None
+    if args.data_mode == "image-folder":
+        stream_image_shape = infer_stream_shape(args, ckpt_image_shape)
+    else:
+        stream_image_shape = args.image_shape
+        raw_clean = load_array(args.clean_data, key=args.key)
 
     ardae, backbone, image_shape = load_ardae_from_checkpoint(
         path=args.checkpoint,
         input_dim=args.input_dim,
         device=device,
         clean=raw_clean,
-        image_shape_override=args.image_shape,
+        image_shape_override=stream_image_shape,
     )
 
-    clean = preprocess_ardae_data(
-        data=raw_clean.clamp(0, 1),
-        input_dim=args.input_dim,
-        normalize=None,
-        flatten=(backbone != "unet"),
-        image_shape=image_shape,
-    )
-
-    loader = DataLoader(
-        TensorDataset(clean),
-        batch_size=args.batch_size,
-        shuffle=False,
+    loader, num_samples, clean_dtype = make_clean_loader(
+        args,
+        backbone,
+        image_shape,
+        device,
+        raw_clean=raw_clean,
     )
 
     n2s = Noise2ScoreBlind(
@@ -337,7 +442,7 @@ def main():
     params = n2s._make_param_grid(
         noise_type=args.noise_type,
         device=device,
-        dtype=clean.dtype,
+        dtype=torch.float32,
         param_min=args.param_min,
         param_max=args.param_max,
         num_candidates=args.num_candidates,
@@ -360,8 +465,8 @@ def main():
 
     pbar = tqdm(loader, desc="Blind Noise2Score eval", total=len(loader))
 
-    for (x,) in pbar:
-        x = x.to(device)
+    for batch in pbar:
+        x = move_batch(batch, device)
         batch_size = x.size(0)
 
         y = add_observation_noise(
@@ -469,6 +574,9 @@ def main():
         "tv_weight": args.tv_weight,
         "range_weight": args.range_weight,
         "data_weight": args.data_weight,
+        "data_mode": args.data_mode,
+        "num_samples": num_samples,
+        "clean_dtype": clean_dtype,
 
         "estimated_noise_param": best["noise_param"],
         "estimated_score_sigma": best["score_sigma"],
@@ -488,7 +596,7 @@ def main():
         "candidate_history": candidate_history,
     }
 
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    print(json.dumps(summary, indent=2, ensure_ascii=False, default=str))
     save_config(output_dir / Path("summary.json"), summary)
 
     save_config(output_dir / Path("candidate_history.json"), candidate_history)
@@ -497,7 +605,7 @@ def main():
     if args.copy_info:
         info_sources = {
             "checkpoint_": Path(args.checkpoint).parent,
-            "data_": Path(args.clean_data).parent,
+            "data_": info_dir_for(args.clean_data),
         }
 
         for prefix, info_dir in info_sources.items():
