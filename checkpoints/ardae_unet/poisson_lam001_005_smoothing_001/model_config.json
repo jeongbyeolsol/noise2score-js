@@ -2,6 +2,7 @@
   "backbone": "unet",
   "base_channels": 32,
   "batch_size": 128,
+  "best_checkpoint_path": "checkpoints/ardae_unet/poisson_lam001_005_smoothing_001/best_model.pt",
   "channel_mults": [
     1,
     2,
@@ -20,6 +21,7 @@
   ],
   "input_dim": 49152,
   "key": null,
+  "last_checkpoint_path": "checkpoints/ardae_unet/poisson_lam001_005_smoothing_001/last_epoch_0256.pt",
   "linear_sigma": false,
   "log_every": 1,
   "lr": 0.001,

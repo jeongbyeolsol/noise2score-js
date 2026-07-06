@@ -25,13 +25,13 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score_blind.py \
   --data-mode image-folder \
   --image-shape $CHANNELS $SHAPE $SHAPE \
   --noise-type "$NOISE" \
-  --noise-param 0.1 \
-  --candidate-params 20,30,50,80,100 \
-  --score-sigma-mode fixed \
-  --fixed-score-sigma 0.1 \
-  --smoothing 0.1 \
+  --noise-param 50 \
+  --candidate-params 50 \
+  --candidate-smoothing 0.03,0.05,0.075,0.1,0.125,0.15,0.2 \
+  --score-sigma-mode same \
   --tv-weight 1.0 \
   --data-weight 0.0 \
   --output-dir "results/n2s_unet_blind_${DATA}_${NOISE}_${INDEX}" \
   --save-output \
-  --copy-info
+  --copy-info \
+  --smoothing 0.1

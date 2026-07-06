@@ -197,6 +197,53 @@ Recommended sweep:
 score_sigma = smoothing = 0.03, 0.05, 0.075, 0.1, 0.125, 0.15, 0.2
 ```
 
+Blind Smoothed ARDAE Evaluation
+-------------------------------
+
+For a Gaussian-smoothed Poisson checkpoint, blind parameter search should sweep
+the Gaussian smoothing sigma, not only the Poisson `peak`.
+
+Recommended blind run:
+
+```bash
+python scripts/run_noise2score_blind.py \
+  --checkpoint checkpoints/ardae_unet/poisson_lam001_005_smoothing/best_model.pt \
+  --clean-data datasets/DIV2K_valid_HR_processed \
+  --data-mode image-folder \
+  --input-dim 49152 \
+  --batch-size 128 \
+  --image-shape 3 128 128 \
+  --patch-size 128 \
+  --stride 128 \
+  --channels 3 \
+  --noise-type poisson \
+  --noise-param 50 \
+  --candidate-params 50 \
+  --candidate-smoothing 0.03,0.05,0.075,0.1,0.125,0.15,0.2 \
+  --score-sigma-mode same \
+  --smoothing 0.1
+```
+
+With `--candidate-smoothing`, each candidate uses:
+
+```text
+score_sigma = smoothing_candidate
+x_hat = y + smoothing_candidate^2 * score
+```
+
+The output summary records:
+
+```text
+estimated_noise_param = selected observation parameter/bookkeeping peak
+estimated_smoothing   = selected Gaussian smoothing sigma
+estimated_score_sigma = selected ARDAE query sigma
+```
+
+For smoothed Poisson ARDAE, `estimated_smoothing` is usually the important blind
+selection result. If you only sweep `--candidate-params 20,30,50,80,100` while
+keeping `--smoothing 0.1`, the denoising rule is effectively the same for every
+candidate because smoothed non-Gaussian denoising uses the smoothing sigma.
+
 Plain Poisson ARDAE Evaluation
 ------------------------------
 

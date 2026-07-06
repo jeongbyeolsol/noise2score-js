@@ -103,6 +103,16 @@ def parse_args():
         default=None,
         help="Comma-separated candidates, e.g. 0.03,0.05,0.075,0.1,0.125,0.15",
     )
+    parser.add_argument(
+        "--candidate-smoothing",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated Gaussian smoothing candidates for smoothed "
+            "non-Gaussian Noise2Score, e.g. 0.03,0.05,0.075,0.1,0.125,0.15,0.2. "
+            "With --score-sigma-mode same, score_sigma follows each smoothing candidate."
+        ),
+    )
     parser.add_argument("--param-min", type=float, default=None)
     parser.add_argument("--param-max", type=float, default=None)
     parser.add_argument("--num-candidates", type=int, default=50)
@@ -341,8 +351,10 @@ def move_batch(batch, device):
     return batch.to(device, non_blocking=True)
 
 
-def get_score_sigma(args, candidate_param):
+def get_score_sigma(args, candidate_param, candidate_smoothing=None):
     if args.score_sigma_mode == "same":
+        if candidate_smoothing is not None:
+            return candidate_smoothing
         return candidate_param
 
     if args.score_sigma_mode == "fixed":
@@ -356,6 +368,55 @@ def get_score_sigma(args, candidate_param):
         return args.score_sigma
 
     raise ValueError(f"Unknown score_sigma_mode: {args.score_sigma_mode}")
+
+
+def build_candidate_jobs(args, n2s, device):
+    candidate_params = parse_float_list(args.candidate_params)
+    candidate_smoothing = parse_float_list(args.candidate_smoothing)
+
+    params = n2s._make_param_grid(
+        noise_type=args.noise_type,
+        device=device,
+        dtype=torch.float32,
+        param_min=args.param_min,
+        param_max=args.param_max,
+        num_candidates=args.num_candidates,
+        candidate_params=candidate_params,
+    )
+    params_list = [float(p.detach().cpu()) for p in params]
+
+    if candidate_smoothing is None:
+        return [
+            {
+                "noise_param": param_value,
+                "smoothing": float(args.smoothing or 0.0),
+                "uses_smoothing_candidate": False,
+            }
+            for param_value in params_list
+        ], params_list, None
+
+    if args.noise_type == "gaussian":
+        raise ValueError("--candidate-smoothing is intended for non-Gaussian smoothing.")
+
+    smoothing_list = [float(v) for v in candidate_smoothing]
+    if any(v <= 0.0 for v in smoothing_list):
+        raise ValueError("--candidate-smoothing values must be > 0.")
+
+    if candidate_params is None and args.param_min is None and args.param_max is None:
+        params_list = [float(args.noise_param)]
+
+    jobs = []
+    for smoothing_value in smoothing_list:
+        for param_value in params_list:
+            jobs.append(
+                {
+                    "noise_param": param_value,
+                    "smoothing": smoothing_value,
+                    "uses_smoothing_candidate": True,
+                }
+            )
+
+    return jobs, params_list, smoothing_list
 
 
 def denoise_from_score(y, score, noise_type, noise_param, clamp=True, smoothing=0.0):
@@ -395,8 +456,11 @@ def main():
         raise ValueError("--score-sigma-mode fixed requires --fixed-score-sigma.")
     if args.smoothing < 0:
         raise ValueError("--smoothing must be >= 0.")
-    if args.smoothing > 0 and args.smoothing_samples < 1:
-        raise ValueError("--smoothing-samples must be >= 1 when --smoothing > 0.")
+    smoothing_enabled = args.smoothing > 0 or args.candidate_smoothing is not None
+    if smoothing_enabled and args.smoothing_samples < 1:
+        raise ValueError(
+            "--smoothing-samples must be >= 1 when smoothing is enabled."
+        )
 
     device = torch.device(args.device)
     requested_output_dir = Path(args.output_dir)
@@ -437,20 +501,12 @@ def main():
         clamp=not args.no_clamp,
     )
 
-    candidate_params = parse_float_list(args.candidate_params)
-
-    params = n2s._make_param_grid(
-        noise_type=args.noise_type,
+    candidate_jobs, params_list, smoothing_list = build_candidate_jobs(
+        args=args,
+        n2s=n2s,
         device=device,
-        dtype=torch.float32,
-        param_min=args.param_min,
-        param_max=args.param_max,
-        num_candidates=args.num_candidates,
-        candidate_params=candidate_params,
     )
-
-    params_list = [float(p.detach().cpu()) for p in params]
-    num_candidates = len(params_list)
+    num_candidates = len(candidate_jobs)
 
     total_count = 0
     noisy_mse_sum = 0.0
@@ -487,13 +543,22 @@ def main():
 
             saved_count += take
 
-        for idx, param_value in enumerate(params_list):
-            score_sigma = get_score_sigma(args, param_value)
+        for idx, candidate in enumerate(candidate_jobs):
+            param_value = candidate["noise_param"]
+            smoothing_value = candidate["smoothing"]
+            candidate_smoothing = (
+                smoothing_value if candidate["uses_smoothing_candidate"] else None
+            )
+            score_sigma = get_score_sigma(
+                args,
+                param_value,
+                candidate_smoothing=candidate_smoothing,
+            )
 
             score = n2s.score(
                 y,
                 score_sigma=score_sigma,
-                smoothing=args.smoothing,
+                smoothing=smoothing_value,
                 smoothing_samples=args.smoothing_samples,
             )
 
@@ -503,7 +568,7 @@ def main():
                 noise_type=args.noise_type,
                 noise_param=param_value,
                 clamp=not args.no_clamp,
-                smoothing=args.smoothing,
+                smoothing=smoothing_value,
             )
 
             q = n2s._blind_quality(
@@ -533,8 +598,17 @@ def main():
     noisy_mse = noisy_mse_sum / total_count
 
     candidate_history = []
-    for idx, param_value in enumerate(params_list):
-        score_sigma = get_score_sigma(args, param_value)
+    for idx, candidate in enumerate(candidate_jobs):
+        param_value = candidate["noise_param"]
+        smoothing_value = candidate["smoothing"]
+        candidate_smoothing = (
+            smoothing_value if candidate["uses_smoothing_candidate"] else None
+        )
+        score_sigma = get_score_sigma(
+            args,
+            param_value,
+            candidate_smoothing=candidate_smoothing,
+        )
         avg_quality = quality_sums[idx] / total_count
         avg_denoised_mse = denoised_mse_sums[idx] / total_count
         avg_cos = cos_sums[idx] / total_count
@@ -542,6 +616,7 @@ def main():
         candidate_history.append(
             {
                 "noise_param": param_value,
+                "smoothing": smoothing_value,
                 "score_sigma": float(score_sigma),
                 "quality": avg_quality,
                 "denoised_mse": avg_denoised_mse,
@@ -567,6 +642,7 @@ def main():
         # 실제 blind 상황에서는 알 수 없는 값이지만, 여기서는 평가용으로 기록.
         "true_noise_param_for_eval": args.noise_param,
         "smoothing": args.smoothing,
+        "candidate_smoothing": smoothing_list,
         "smoothing_samples": args.smoothing_samples,
 
         "score_sigma_mode": args.score_sigma_mode,
@@ -579,6 +655,7 @@ def main():
         "clean_dtype": clean_dtype,
 
         "estimated_noise_param": best["noise_param"],
+        "estimated_smoothing": best["smoothing"],
         "estimated_score_sigma": best["score_sigma"],
         "best_quality": best["quality"],
 
@@ -620,6 +697,7 @@ def main():
         noisy_tensor = torch.cat(save_noisy, dim=0)
 
         best_noise_param = float(best["noise_param"])
+        best_smoothing = float(best["smoothing"])
         best_score_sigma = float(best["score_sigma"])
 
         noisy_device = noisy_tensor.to(device)
@@ -627,7 +705,7 @@ def main():
         score = n2s.score(
             noisy_device,
             score_sigma=best_score_sigma,
-            smoothing=args.smoothing,
+            smoothing=best_smoothing,
             smoothing_samples=args.smoothing_samples,
         )
         denoised = denoise_from_score(
@@ -636,7 +714,7 @@ def main():
             noise_type=args.noise_type,
             noise_param=best_noise_param,
             clamp=not args.no_clamp,
-            smoothing=args.smoothing,
+            smoothing=best_smoothing,
         )
 
         clean_np = clean_tensor.numpy()
