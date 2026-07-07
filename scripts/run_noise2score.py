@@ -75,7 +75,18 @@ def parse_args():
     parser.add_argument("--recursive-images", action="store_true")
 
     parser.add_argument("--noise-type", type=str, default="gaussian", choices=["gaussian", "poisson", "gamma"])
-    parser.add_argument("--noise-param", type=float, default=0.1)
+    parser.add_argument(
+        "--noise-param",
+        type=float,
+        default=0.1,
+        help="Distribution noise parameter: gaussian std, poisson peak, or gamma concentration.",
+    )
+    parser.add_argument(
+        "--poisson-peak",
+        type=float,
+        default=None,
+        help="Alias for --noise-param when --noise-type poisson. Larger peak means weaker Poisson noise.",
+    )
     parser.add_argument("--score-sigma", type=float, default=None)
     parser.add_argument(
         "--smoothing",
@@ -137,8 +148,18 @@ def parse_args():
     parser.add_argument("--ardae-channel-mults", type=str, default="1,2,4,8")
     parser.add_argument("--ardae-no-norm", action="store_true")
     parser.add_argument("--ardae-patch-loader", type=str, default="stream", choices=["stream", "map"])
-    parser.add_argument("--ardae-sigma-min", type=float, default=0.001)
-    parser.add_argument("--ardae-sigma-max", type=float, default=0.5)
+    parser.add_argument(
+        "--ardae-sigma-min",
+        type=float,
+        default=0.001,
+        help="ARDAE noise-level min. With --ardae-smoothing this is Gaussian smoothing sigma; otherwise poisson uses peak.",
+    )
+    parser.add_argument(
+        "--ardae-sigma-max",
+        type=float,
+        default=0.5,
+        help="ARDAE noise-level max. With --ardae-smoothing this is Gaussian smoothing sigma; otherwise poisson uses peak.",
+    )
     parser.add_argument("--ardae-linear-sigma", action="store_true")
     parser.add_argument(
         "--ardae-smoothing",
@@ -179,6 +200,7 @@ def build_ardae_train_args(args):
         nonlinearity=args.ardae_nonlinearity,
         noise_type=args.noise_type,
         noise_param=args.noise_param,
+        poisson_peak=args.poisson_peak,
         save_dir=args.ardae_save_dir,
         save_every_best=args.ardae_save_every_best,
         log_every=args.ardae_log_every,
@@ -254,6 +276,23 @@ def normalize_data_modes(args):
             args.ardae_test_data or args.clean_data,
             fallback=args.data_mode,
         )
+
+
+def normalize_noise_param_aliases(args):
+    if not hasattr(args, "poisson_peak"):
+        args.poisson_peak = None
+    if args.poisson_peak is not None:
+        if args.noise_type != "poisson":
+            raise ValueError("--poisson-peak can only be used with --noise-type poisson.")
+        args.noise_param = float(args.poisson_peak)
+
+    if args.noise_type == "poisson":
+        if args.noise_param <= 0:
+            raise ValueError("Poisson peak must be positive.")
+        args.poisson_peak = float(args.noise_param)
+        args.poisson_lam = 1.0 / float(args.noise_param)
+    else:
+        args.poisson_lam = None
 
 
 def run_ardae_image_folder_test(args, checkpoint):
@@ -583,6 +622,8 @@ def stitch_noise2score_outputs(args, n2s, backbone, output_dir, device):
     image_paths = find_image_paths(args.noisy_data or args.clean_data, recursive=args.recursive_images)
     if len(image_paths) == 0:
         raise ValueError(f"No image/npy files found in {args.clean_data}.")
+    if args.save_output and args.save_output_limit > 0:
+        image_paths = image_paths[: args.save_output_limit]
 
     stitch_dir = output_dir / "stitched"
     image_summaries = []
@@ -707,6 +748,7 @@ def main():
     if args.clean_data is None and args.noisy_data is None:
         raise ValueError("Provide --clean-data for synthetic-noise eval or --noisy-data for denoising noisy inputs.")
     normalize_data_modes(args)
+    normalize_noise_param_aliases(args)
     if args.smoothing < 0:
         raise ValueError("--smoothing must be >= 0.")
     if args.smoothing > 0 and args.smoothing_samples < 1:
@@ -770,8 +812,12 @@ def main():
     save_denoised = []
     save_score = []
     saved_count = 0
+    stop_after_saved_outputs = args.save_output and args.save_output_limit > 0
 
     for batch in tqdm(loader, desc="Noise2Score eval", total=len(loader)):
+        if stop_after_saved_outputs and saved_count >= args.save_output_limit:
+            break
+
         batch_tensor = move_batch(batch, device)
         if args.noisy_data is not None:
             x = None
@@ -783,6 +829,13 @@ def main():
                 noise_type=args.noise_type,
                 noise_param=args.noise_param,
             )
+
+        if stop_after_saved_outputs:
+            remain = args.save_output_limit - saved_count
+            take = min(remain, y.size(0))
+            y = y[:take]
+            if x is not None:
+                x = x[:take]
 
         x_hat = n2s.denoise(
             y,
@@ -807,17 +860,14 @@ def main():
                 eps=1e-8,
             ).mean().item()
         
-        if args.save_output and saved_count < args.save_output_limit:
-            remain = args.save_output_limit - saved_count
-            take = min(remain, y.size(0))
-
+        if stop_after_saved_outputs:
             if x is not None:
-                save_clean.append(x[:take].detach().cpu())
-            save_noisy.append(y[:take].detach().cpu())
-            save_denoised.append(x_hat[:take].detach().cpu())
-            save_score.append(score[:take].detach().cpu())
+                save_clean.append(x.detach().cpu())
+            save_noisy.append(y.detach().cpu())
+            save_denoised.append(x_hat.detach().cpu())
+            save_score.append(score.detach().cpu())
 
-            saved_count += take
+            saved_count += y.size(0)
 
         batch_size = y.size(0)
         total_count += batch_size
@@ -841,7 +891,9 @@ def main():
         "score_sigma": args.score_sigma,
         "data_mode": args.data_mode,
         "input_mode": "noisy" if args.noisy_data is not None else "synthetic",
-        "num_samples": num_samples,
+        "num_samples": total_count,
+        "available_num_samples": num_samples,
+        "stopped_after_save_output_limit": stop_after_saved_outputs,
         "clean_dtype": clean_dtype,
         "requested_output_dir": requested_output_dir,
         "output_dir": output_dir,
@@ -855,6 +907,9 @@ def main():
         "score_clean_direction_cos": score_cos,
         "improved_mse": denoised_mse < noisy_mse if denoised_mse is not None else None,
     }
+    if args.noise_type == "poisson":
+        summary["poisson_peak"] = args.poisson_peak
+        summary["poisson_lam"] = args.poisson_lam
     if ardae_train_result is not None:
         summary["ardae_train"] = {
             "save_dir": ardae_train_result["save_dir"],

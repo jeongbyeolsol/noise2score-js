@@ -102,7 +102,18 @@ def parse_args():
 
     # 실제 관측 noisy image를 만들 때 쓰는 true parameter.
     # blind 평가에서는 metric 계산용 synthetic corruption에 필요하다.
-    parser.add_argument("--noise-param", type=float, default=0.1)
+    parser.add_argument(
+        "--noise-param",
+        type=float,
+        default=0.1,
+        help="Distribution noise parameter: gaussian std, poisson peak, or gamma concentration.",
+    )
+    parser.add_argument(
+        "--poisson-peak",
+        type=float,
+        default=None,
+        help="Alias for --noise-param when --noise-type poisson. Larger peak means weaker Poisson noise.",
+    )
     parser.add_argument(
         "--smoothing",
         type=float,
@@ -121,7 +132,7 @@ def parse_args():
         "--candidate-params",
         type=str,
         default=None,
-        help="Comma-separated candidates, e.g. 0.03,0.05,0.075,0.1,0.125,0.15",
+        help="Comma-separated candidate noise parameters. For poisson these are peak values.",
     )
     parser.add_argument(
         "--candidate-smoothing",
@@ -209,6 +220,21 @@ def normalize_data_mode(args):
     eval_data_path = args.noisy_data or args.clean_data
     if args.data_mode == "array":
         args.data_mode = infer_path_data_mode(eval_data_path, fallback=args.data_mode)
+
+
+def normalize_noise_param_aliases(args):
+    if args.poisson_peak is not None:
+        if args.noise_type != "poisson":
+            raise ValueError("--poisson-peak can only be used with --noise-type poisson.")
+        args.noise_param = float(args.poisson_peak)
+
+    if args.noise_type == "poisson":
+        if args.noise_param <= 0:
+            raise ValueError("Poisson peak must be positive.")
+        args.poisson_peak = float(args.noise_param)
+        args.poisson_lam = 1.0 / float(args.noise_param)
+    else:
+        args.poisson_lam = None
 
 
 def make_clean_loader(args, backbone, image_shape, device, raw_clean=None):
@@ -361,6 +387,8 @@ def stitch_blind_outputs(args, n2s, backbone, candidate_jobs, output_dir, device
     image_paths = find_image_paths(args.noisy_data or args.clean_data, recursive=args.recursive_images)
     if len(image_paths) == 0:
         raise ValueError(f"No image/npy files found in {args.noisy_data or args.clean_data}.")
+    if args.save_output and args.save_output_limit > 0:
+        image_paths = image_paths[: args.save_output_limit]
 
     stitch_dir = output_dir / "stitched"
     flatten = backbone != "unet"
@@ -538,6 +566,7 @@ def main():
     if args.clean_data is None and args.noisy_data is None:
         raise ValueError("Provide --clean-data for synthetic-noise eval or --noisy-data for denoising noisy inputs.")
     normalize_data_mode(args)
+    normalize_noise_param_aliases(args)
     if args.score_sigma_mode == "fixed" and args.fixed_score_sigma is None:
         raise ValueError("--score-sigma-mode fixed requires --fixed-score-sigma.")
     if args.smoothing < 0:
@@ -607,10 +636,14 @@ def main():
     save_clean = []
     save_noisy = []
     saved_count = 0
+    stop_after_saved_outputs = args.save_output and args.save_output_limit > 0
 
     pbar = tqdm(loader, desc="Blind Noise2Score eval", total=len(loader))
 
     for batch in pbar:
+        if stop_after_saved_outputs and saved_count >= args.save_output_limit:
+            break
+
         batch_tensor = move_batch(batch, device)
         if args.noisy_data is not None:
             x = None
@@ -623,20 +656,24 @@ def main():
                 noise_param=args.noise_param,
             )
 
+        if stop_after_saved_outputs:
+            remain = args.save_output_limit - saved_count
+            take = min(remain, y.size(0))
+            y = y[:take]
+            if x is not None:
+                x = x[:take]
+
         batch_size = y.size(0)
         noisy_mse = F.mse_loss(y, x).item() if x is not None else None
         if x is not None:
             noisy_mse_sum += noisy_mse * batch_size
 
-        if args.save_output and saved_count < args.save_output_limit:
-            remain = args.save_output_limit - saved_count
-            take = min(remain, batch_size)
-
+        if stop_after_saved_outputs:
             if x is not None:
-                save_clean.append(x[:take].detach().cpu())
-            save_noisy.append(y[:take].detach().cpu())
+                save_clean.append(x.detach().cpu())
+            save_noisy.append(y.detach().cpu())
 
-            saved_count += take
+            saved_count += batch_size
 
         for idx, candidate in enumerate(candidate_jobs):
             param_value = candidate["noise_param"]
@@ -751,7 +788,9 @@ def main():
         "data_weight": args.data_weight,
         "data_mode": args.data_mode,
         "input_mode": "noisy" if args.noisy_data is not None else "synthetic",
-        "num_samples": num_samples,
+        "num_samples": total_count,
+        "available_num_samples": num_samples,
+        "stopped_after_save_output_limit": stop_after_saved_outputs,
         "clean_dtype": clean_dtype,
 
         "estimated_noise_param": best["noise_param"],
@@ -773,6 +812,11 @@ def main():
 
         "candidate_history": candidate_history,
     }
+    if args.noise_type == "poisson":
+        summary["true_poisson_peak_for_eval"] = args.poisson_peak
+        summary["true_poisson_lam_for_eval"] = args.poisson_lam
+        summary["estimated_poisson_peak"] = best["noise_param"]
+        summary["estimated_poisson_lam"] = 1.0 / float(best["noise_param"])
 
     save_config(output_dir / Path("candidate_history.json"), candidate_history)
 

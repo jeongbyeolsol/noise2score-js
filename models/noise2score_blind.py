@@ -57,8 +57,8 @@ class Noise2ScoreBlind(Noise2Score):
             )
 
         if noise_type == "poisson":
-            param_min = 1e-3 if param_min is None else param_min
-            param_max = 1.0 if param_max is None else param_max
+            param_min = 20.0 if param_min is None else param_min
+            param_max = 100.0 if param_max is None else param_max
 
             return torch.logspace(
                 torch.log10(torch.tensor(param_min, device=device, dtype=dtype)),

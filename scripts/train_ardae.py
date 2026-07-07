@@ -81,7 +81,18 @@ def parse_args():
     parser.add_argument("--num-hidden-layers", type=int, default=1)
     parser.add_argument("--nonlinearity", type=str, default="tanh")
     parser.add_argument("--noise-type", type=str, default="gaussian", choices=["gaussian", "poisson", "gamma"])
-    parser.add_argument("--noise-param", type=float, default=0.1)
+    parser.add_argument(
+        "--noise-param",
+        type=float,
+        default=0.1,
+        help="Distribution noise parameter: gaussian std, poisson peak, or gamma concentration.",
+    )
+    parser.add_argument(
+        "--poisson-peak",
+        type=float,
+        default=None,
+        help="Alias for --noise-param when --noise-type poisson. Larger peak means weaker Poisson noise.",
+    )
 
     parser.add_argument("--save-dir", type=str, default="checkpoints/ardae")
     parser.add_argument("--save-every-best", action="store_true", help="Save periodic checkpoints.")
@@ -100,8 +111,26 @@ def parse_args():
     parser.add_argument("--channel-mults", type=str, default="1,2,4,8", help="Comma-separated UNet channel multipliers.")
     parser.add_argument("--no-norm", action="store_true", help="Disable GroupNorm in UNet blocks.")
 
-    parser.add_argument("--sigma-min", type=float, default=0.001, help="Minimum ARDAE training noise level.")
-    parser.add_argument("--sigma-max", type=float, default=0.5, help="Maximum ARDAE training noise level.")
+    parser.add_argument(
+        "--sigma-min",
+        type=float,
+        default=0.001,
+        help=(
+            "Minimum ARDAE training noise level. With --smoothing this is Gaussian "
+            "smoothing sigma; otherwise it is the distribution parameter "
+            "(poisson peak, not lam)."
+        ),
+    )
+    parser.add_argument(
+        "--sigma-max",
+        type=float,
+        default=0.5,
+        help=(
+            "Maximum ARDAE training noise level. With --smoothing this is Gaussian "
+            "smoothing sigma; otherwise it is the distribution parameter "
+            "(poisson peak, not lam)."
+        ),
+    )
     parser.add_argument("--linear-sigma", action="store_true", help="Sample noise levels uniformly in linear scale instead of log scale.")
     parser.add_argument(
         "--smoothing",
@@ -120,6 +149,21 @@ def parse_args():
 
 
 def prepare_args(args):
+    if not hasattr(args, "poisson_peak"):
+        args.poisson_peak = None
+    if args.poisson_peak is not None:
+        if args.noise_type != "poisson":
+            raise ValueError("--poisson-peak can only be used with --noise-type poisson.")
+        args.noise_param = float(args.poisson_peak)
+
+    if args.noise_type == "poisson":
+        if args.noise_param <= 0:
+            raise ValueError("Poisson peak must be positive.")
+        args.poisson_peak = float(args.noise_param)
+        args.poisson_lam = 1.0 / float(args.noise_param)
+    else:
+        args.poisson_lam = None
+
     args.use_gaussian_smoothing = args.smoothing is not None
     args.smoothing_sigma = None
 

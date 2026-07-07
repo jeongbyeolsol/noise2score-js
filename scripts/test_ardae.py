@@ -62,7 +62,18 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
 
-    parser.add_argument("--noise-param", type=float, default=None, help="Override checkpoint noise_param.")
+    parser.add_argument(
+        "--noise-param",
+        type=float,
+        default=None,
+        help="Override checkpoint noise_param: gaussian std, poisson peak, or gamma concentration.",
+    )
+    parser.add_argument(
+        "--poisson-peak",
+        type=float,
+        default=None,
+        help="Alias for --noise-param when testing a poisson checkpoint.",
+    )
     parser.add_argument("--noise-type", type=str, default=None, choices=["gaussian", "poisson", "gamma"])
     parser.add_argument("--no-metric", action="store_true", help="Disable score metrics and report only loss.")
 
@@ -92,6 +103,9 @@ def build_model(checkpoint, cli_args, device):
     channel_mults = as_tuple(get_ckpt_arg(ckpt_args, "channel_mults", None), default=(1, 2, 4, 8))
     use_norm = not bool(get_ckpt_arg(ckpt_args, "no_norm", False))
     noise_param = cli_args.noise_param
+    poisson_peak = getattr(cli_args, "poisson_peak", None)
+    if poisson_peak is not None:
+        noise_param = float(poisson_peak)
     if noise_param is None:
         smoothing_sigma = get_ckpt_arg(ckpt_args, "smoothing_sigma", None)
         if smoothing_sigma is not None:

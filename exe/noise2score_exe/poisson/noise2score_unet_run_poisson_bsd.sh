@@ -32,7 +32,7 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score.py \
   --num-workers 0 \
   --recursive-images \
   --noise-type "$NOISE" \
-  --noise-param 100 \
+  --poisson-peak 100 \
   --output-dir "results/n2s_unet_${DATA}_${NOISE}" \
   --save-output \
   --copy-info

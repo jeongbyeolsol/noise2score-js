@@ -3,7 +3,7 @@ set -euo pipefail
 
 DATA="datasets/DIV2K_train_HR_processed"
 GPU=0
-EPOCH=256
+EPOCH=64
 SHAPE=128
 CHANNELS=3
 INPUT_DIM=$((CHANNELS * SHAPE * SHAPE))
@@ -31,10 +31,8 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
   --channel-mults 1,2,4 \
   --nonlinearity silu \
   --noise-type $NOISE \
-  --noise-param 100 \
-  --smoothing \
-  --sigma-min 0.03 \
-  --sigma-max 0.22 \
+  --poisson-peak 50 \
+  --smoothing 0.1 \
   --save-dir checkpoints/ardae_unet/poisson_lam001_005_smoothing \
   --use-metric \
   --recursive-images \

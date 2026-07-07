@@ -10,7 +10,7 @@ DEVICE="${DEVICE:-cuda}"
 SEED="${SEED:-0}"
 
 NOISE="${NOISE:-poisson}"
-NOISE_PARAM="${NOISE_PARAM:-50}"
+POISSON_PEAK="${POISSON_PEAK:-${NOISE_PARAM:-50}}"
 SMOOTHING="${SMOOTHING:-0.1}"
 SCORE_SIGMA="${SCORE_SIGMA:-0.1}"
 
@@ -38,7 +38,7 @@ CUDA_VISIBLE_DEVICES="$GPU" "$PYTHON_BIN" ./scripts/run_noise2score.py \
   --channels "$CHANNELS" \
   --recursive-images \
   --noise-type "$NOISE" \
-  --noise-param "$NOISE_PARAM" \
+  --poisson-peak "$POISSON_PEAK" \
   --score-sigma "$SCORE_SIGMA" \
   --smoothing "$SMOOTHING" \
   --smoothing-samples "${SMOOTHING_SAMPLES:-8}" \
