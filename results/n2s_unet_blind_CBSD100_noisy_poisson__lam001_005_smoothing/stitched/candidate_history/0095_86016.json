@@ -1,0 +1,450 @@
+[
+  {
+    "denoised_mse": 0.009192864410579205,
+    "denoised_psnr": 20.36549145427894,
+    "noise_param": 20.0,
+    "quality": 0.4045407176017761,
+    "score_sigma": 0.03,
+    "smoothing": 0.03
+  },
+  {
+    "denoised_mse": 0.009192468598484993,
+    "denoised_psnr": 20.365678450085134,
+    "noise_param": 25.0,
+    "quality": 0.4045409560203552,
+    "score_sigma": 0.03,
+    "smoothing": 0.03
+  },
+  {
+    "denoised_mse": 0.009192836470901966,
+    "denoised_psnr": 20.365504653718794,
+    "noise_param": 30.0,
+    "quality": 0.4045402407646179,
+    "score_sigma": 0.03,
+    "smoothing": 0.03
+  },
+  {
+    "denoised_mse": 0.009192722849547863,
+    "denoised_psnr": 20.365558331854174,
+    "noise_param": 40.0,
+    "quality": 0.4045390486717224,
+    "score_sigma": 0.03,
+    "smoothing": 0.03
+  },
+  {
+    "denoised_mse": 0.009192444384098053,
+    "denoised_psnr": 20.36568989008993,
+    "noise_param": 50.0,
+    "quality": 0.4045394957065582,
+    "score_sigma": 0.03,
+    "smoothing": 0.03
+  },
+  {
+    "denoised_mse": 0.00919263530522585,
+    "denoised_psnr": 20.36559969087003,
+    "noise_param": 67.0,
+    "quality": 0.4045392870903015,
+    "score_sigma": 0.03,
+    "smoothing": 0.03
+  },
+  {
+    "denoised_mse": 0.00919273216277361,
+    "denoised_psnr": 20.36555393198205,
+    "noise_param": 80.0,
+    "quality": 0.40453195571899414,
+    "score_sigma": 0.03,
+    "smoothing": 0.03
+  },
+  {
+    "denoised_mse": 0.009192624129354954,
+    "denoised_psnr": 20.365604970772747,
+    "noise_param": 100.0,
+    "quality": 0.40454012155532837,
+    "score_sigma": 0.03,
+    "smoothing": 0.03
+  },
+  {
+    "denoised_mse": 0.008755802176892757,
+    "denoised_psnr": 20.5770405917062,
+    "noise_param": 20.0,
+    "quality": 0.35622507333755493,
+    "score_sigma": 0.05,
+    "smoothing": 0.05
+  },
+  {
+    "denoised_mse": 0.008756387047469616,
+    "denoised_psnr": 20.5767505011173,
+    "noise_param": 25.0,
+    "quality": 0.3562370836734772,
+    "score_sigma": 0.05,
+    "smoothing": 0.05
+  },
+  {
+    "denoised_mse": 0.008755305781960487,
+    "denoised_psnr": 20.577286814367262,
+    "noise_param": 30.0,
+    "quality": 0.356218159198761,
+    "score_sigma": 0.05,
+    "smoothing": 0.05
+  },
+  {
+    "denoised_mse": 0.008756343275308609,
+    "denoised_psnr": 20.576772211047892,
+    "noise_param": 40.0,
+    "quality": 0.35621893405914307,
+    "score_sigma": 0.05,
+    "smoothing": 0.05
+  },
+  {
+    "denoised_mse": 0.008755126036703587,
+    "denoised_psnr": 20.577375975358873,
+    "noise_param": 50.0,
+    "quality": 0.35623621940612793,
+    "score_sigma": 0.05,
+    "smoothing": 0.05
+  },
+  {
+    "denoised_mse": 0.008755549788475037,
+    "denoised_psnr": 20.57716578009524,
+    "noise_param": 67.0,
+    "quality": 0.3562309145927429,
+    "score_sigma": 0.05,
+    "smoothing": 0.05
+  },
+  {
+    "denoised_mse": 0.00875523779541254,
+    "denoised_psnr": 20.57732053825766,
+    "noise_param": 80.0,
+    "quality": 0.3562079071998596,
+    "score_sigma": 0.05,
+    "smoothing": 0.05
+  },
+  {
+    "denoised_mse": 0.00875528622418642,
+    "denoised_psnr": 20.577296515733558,
+    "noise_param": 100.0,
+    "quality": 0.35621291399002075,
+    "score_sigma": 0.05,
+    "smoothing": 0.05
+  },
+  {
+    "denoised_mse": 0.009519537910819054,
+    "denoised_psnr": 20.21384132251244,
+    "noise_param": 20.0,
+    "quality": 0.30340754985809326,
+    "score_sigma": 0.075,
+    "smoothing": 0.075
+  },
+  {
+    "denoised_mse": 0.009519471786916256,
+    "denoised_psnr": 20.213871489255943,
+    "noise_param": 25.0,
+    "quality": 0.3033803105354309,
+    "score_sigma": 0.075,
+    "smoothing": 0.075
+  },
+  {
+    "denoised_mse": 0.00952357891947031,
+    "denoised_psnr": 20.21199814967414,
+    "noise_param": 30.0,
+    "quality": 0.303363174200058,
+    "score_sigma": 0.075,
+    "smoothing": 0.075
+  },
+  {
+    "denoised_mse": 0.00951860100030899,
+    "denoised_psnr": 20.214268775076775,
+    "noise_param": 40.0,
+    "quality": 0.30337274074554443,
+    "score_sigma": 0.075,
+    "smoothing": 0.075
+  },
+  {
+    "denoised_mse": 0.009519899263978004,
+    "denoised_psnr": 20.213676471333773,
+    "noise_param": 50.0,
+    "quality": 0.30338096618652344,
+    "score_sigma": 0.075,
+    "smoothing": 0.075
+  },
+  {
+    "denoised_mse": 0.009519449435174465,
+    "denoised_psnr": 20.213881686512405,
+    "noise_param": 67.0,
+    "quality": 0.3033769726753235,
+    "score_sigma": 0.075,
+    "smoothing": 0.075
+  },
+  {
+    "denoised_mse": 0.009522730484604836,
+    "denoised_psnr": 20.212385070386976,
+    "noise_param": 80.0,
+    "quality": 0.30340978503227234,
+    "score_sigma": 0.075,
+    "smoothing": 0.075
+  },
+  {
+    "denoised_mse": 0.009523250162601471,
+    "denoised_psnr": 20.212148072050642,
+    "noise_param": 100.0,
+    "quality": 0.3033958673477173,
+    "score_sigma": 0.075,
+    "smoothing": 0.075
+  },
+  {
+    "denoised_mse": 0.011302366852760315,
+    "denoised_psnr": 19.46830600458417,
+    "noise_param": 20.0,
+    "quality": 0.2602914571762085,
+    "score_sigma": 0.1,
+    "smoothing": 0.1
+  },
+  {
+    "denoised_mse": 0.01130977738648653,
+    "denoised_psnr": 19.465459433302456,
+    "noise_param": 25.0,
+    "quality": 0.26025110483169556,
+    "score_sigma": 0.1,
+    "smoothing": 0.1
+  },
+  {
+    "denoised_mse": 0.0113100940361619,
+    "denoised_psnr": 19.465337841800764,
+    "noise_param": 30.0,
+    "quality": 0.2602570950984955,
+    "score_sigma": 0.1,
+    "smoothing": 0.1
+  },
+  {
+    "denoised_mse": 0.01130595337599516,
+    "denoised_psnr": 19.466928098355478,
+    "noise_param": 40.0,
+    "quality": 0.2602894604206085,
+    "score_sigma": 0.1,
+    "smoothing": 0.1
+  },
+  {
+    "denoised_mse": 0.01130495872348547,
+    "denoised_psnr": 19.46731019005947,
+    "noise_param": 50.0,
+    "quality": 0.2603440284729004,
+    "score_sigma": 0.1,
+    "smoothing": 0.1
+  },
+  {
+    "denoised_mse": 0.011303032748401165,
+    "denoised_psnr": 19.46805014111126,
+    "noise_param": 67.0,
+    "quality": 0.2602626383304596,
+    "score_sigma": 0.1,
+    "smoothing": 0.1
+  },
+  {
+    "denoised_mse": 0.011310787871479988,
+    "denoised_psnr": 19.465071425264647,
+    "noise_param": 80.0,
+    "quality": 0.2602396011352539,
+    "score_sigma": 0.1,
+    "smoothing": 0.1
+  },
+  {
+    "denoised_mse": 0.011309567838907242,
+    "denoised_psnr": 19.465539900138676,
+    "noise_param": 100.0,
+    "quality": 0.2602618634700775,
+    "score_sigma": 0.1,
+    "smoothing": 0.1
+  },
+  {
+    "denoised_mse": 0.013524103909730911,
+    "denoised_psnr": 18.688915010791916,
+    "noise_param": 20.0,
+    "quality": 0.22540870308876038,
+    "score_sigma": 0.125,
+    "smoothing": 0.125
+  },
+  {
+    "denoised_mse": 0.013531479053199291,
+    "denoised_psnr": 18.686547304137594,
+    "noise_param": 25.0,
+    "quality": 0.22538839280605316,
+    "score_sigma": 0.125,
+    "smoothing": 0.125
+  },
+  {
+    "denoised_mse": 0.013526410795748234,
+    "denoised_psnr": 18.688174272302437,
+    "noise_param": 30.0,
+    "quality": 0.22543463110923767,
+    "score_sigma": 0.125,
+    "smoothing": 0.125
+  },
+  {
+    "denoised_mse": 0.013525541871786118,
+    "denoised_psnr": 18.688453267971777,
+    "noise_param": 40.0,
+    "quality": 0.2254554033279419,
+    "score_sigma": 0.125,
+    "smoothing": 0.125
+  },
+  {
+    "denoised_mse": 0.013534298166632652,
+    "denoised_psnr": 18.685642600457776,
+    "noise_param": 50.0,
+    "quality": 0.22534668445587158,
+    "score_sigma": 0.125,
+    "smoothing": 0.125
+  },
+  {
+    "denoised_mse": 0.013524791225790977,
+    "denoised_psnr": 18.688694301169008,
+    "noise_param": 67.0,
+    "quality": 0.22549030184745789,
+    "score_sigma": 0.125,
+    "smoothing": 0.125
+  },
+  {
+    "denoised_mse": 0.013525782153010368,
+    "denoised_psnr": 18.688376116251067,
+    "noise_param": 80.0,
+    "quality": 0.22538726031780243,
+    "score_sigma": 0.125,
+    "smoothing": 0.125
+  },
+  {
+    "denoised_mse": 0.013528521172702312,
+    "denoised_psnr": 18.687496743289376,
+    "noise_param": 100.0,
+    "quality": 0.2253902554512024,
+    "score_sigma": 0.125,
+    "smoothing": 0.125
+  },
+  {
+    "denoised_mse": 0.015837956219911575,
+    "denoised_psnr": 18.003008618678432,
+    "noise_param": 20.0,
+    "quality": 0.19902004301548004,
+    "score_sigma": 0.15,
+    "smoothing": 0.15
+  },
+  {
+    "denoised_mse": 0.01584659516811371,
+    "denoised_psnr": 18.00064036824581,
+    "noise_param": 25.0,
+    "quality": 0.19903919100761414,
+    "score_sigma": 0.15,
+    "smoothing": 0.15
+  },
+  {
+    "denoised_mse": 0.01584879867732525,
+    "denoised_psnr": 18.00003651274706,
+    "noise_param": 30.0,
+    "quality": 0.19892838597297668,
+    "score_sigma": 0.15,
+    "smoothing": 0.15
+  },
+  {
+    "denoised_mse": 0.015856854617595673,
+    "denoised_psnr": 17.99782955586859,
+    "noise_param": 40.0,
+    "quality": 0.19903039932250977,
+    "score_sigma": 0.15,
+    "smoothing": 0.15
+  },
+  {
+    "denoised_mse": 0.015840549021959305,
+    "denoised_psnr": 18.002297701533884,
+    "noise_param": 50.0,
+    "quality": 0.19909578561782837,
+    "score_sigma": 0.15,
+    "smoothing": 0.15
+  },
+  {
+    "denoised_mse": 0.015851158648729324,
+    "denoised_psnr": 17.999389873037362,
+    "noise_param": 67.0,
+    "quality": 0.19897666573524475,
+    "score_sigma": 0.15,
+    "smoothing": 0.15
+  },
+  {
+    "denoised_mse": 0.015838149935007095,
+    "denoised_psnr": 18.002955500156457,
+    "noise_param": 80.0,
+    "quality": 0.1991138756275177,
+    "score_sigma": 0.15,
+    "smoothing": 0.15
+  },
+  {
+    "denoised_mse": 0.01586233824491501,
+    "denoised_psnr": 17.99632793562267,
+    "noise_param": 100.0,
+    "quality": 0.19898635149002075,
+    "score_sigma": 0.15,
+    "smoothing": 0.15
+  },
+  {
+    "denoised_mse": 0.020404541864991188,
+    "denoised_psnr": 16.902731518213606,
+    "noise_param": 20.0,
+    "quality": 0.16716799139976501,
+    "score_sigma": 0.2,
+    "smoothing": 0.2
+  },
+  {
+    "denoised_mse": 0.020418420433998108,
+    "denoised_psnr": 16.899778579068972,
+    "noise_param": 25.0,
+    "quality": 0.16715681552886963,
+    "score_sigma": 0.2,
+    "smoothing": 0.2
+  },
+  {
+    "denoised_mse": 0.020402586087584496,
+    "denoised_psnr": 16.903147809865985,
+    "noise_param": 30.0,
+    "quality": 0.16727115213871002,
+    "score_sigma": 0.2,
+    "smoothing": 0.2
+  },
+  {
+    "denoised_mse": 0.020358994603157043,
+    "denoised_psnr": 16.91243672753854,
+    "noise_param": 40.0,
+    "quality": 0.1672733724117279,
+    "score_sigma": 0.2,
+    "smoothing": 0.2
+  },
+  {
+    "denoised_mse": 0.020382901653647423,
+    "denoised_psnr": 16.907339909642392,
+    "noise_param": 50.0,
+    "quality": 0.16721433401107788,
+    "score_sigma": 0.2,
+    "smoothing": 0.2
+  },
+  {
+    "denoised_mse": 0.02038842812180519,
+    "denoised_psnr": 16.906162555529466,
+    "noise_param": 67.0,
+    "quality": 0.16734808683395386,
+    "score_sigma": 0.2,
+    "smoothing": 0.2
+  },
+  {
+    "denoised_mse": 0.020403211936354637,
+    "denoised_psnr": 16.903014592195674,
+    "noise_param": 80.0,
+    "quality": 0.16732127964496613,
+    "score_sigma": 0.2,
+    "smoothing": 0.2
+  },
+  {
+    "denoised_mse": 0.020420432090759277,
+    "denoised_psnr": 16.899350725993994,
+    "noise_param": 100.0,
+    "quality": 0.16710489988327026,
+    "score_sigma": 0.2,
+    "smoothing": 0.2
+  }
+]

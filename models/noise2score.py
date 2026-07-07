@@ -7,9 +7,38 @@ import torch.nn as nn
 
 from models.ardae import ARDAE
 from config import ARDAEConfig
+from utils import denoise_from_score
+
+
+def _with_noise_type(args, kwargs, noise_type):
+    args = list(args)
+    if len(args) > 1:
+        args[1] = noise_type
+    else:
+        kwargs = dict(kwargs)
+        kwargs["noise_type"] = noise_type
+    return tuple(args), kwargs
+
+
+def _get_noise_type_arg(args, kwargs):
+    if len(args) > 1:
+        return args[1]
+    return kwargs.get("noise_type", "gaussian")
 
 
 class Noise2Score(nn.Module):
+    _distribution_classes = {}
+
+    def __new__(cls, *args, **kwargs):
+        if cls is Noise2Score:
+            noise_type = _get_noise_type_arg(args, kwargs)
+            try:
+                distribution_cls = cls._distribution_classes[noise_type]
+            except KeyError:
+                raise NotImplementedError(f"Unknown noise_type: {noise_type}") from None
+            return super().__new__(distribution_cls)
+        return super().__new__(cls)
+
     def __init__(
         self,
         ardae,
@@ -74,32 +103,22 @@ class Noise2Score(nn.Module):
             smoothing=smoothing,
             smoothing_samples=smoothing_samples,
         )
-        smoothing = float(smoothing or 0.0)
+        return self.denoise_from_score(
+            y=y,
+            score=score,
+            noise_param=denoise_noise_param,
+            smoothing=smoothing,
+        )
 
-        if smoothing > 0.0 and self.noise_type != "gaussian":
-            x_hat = y + smoothing ** 2 * score
-
-        elif self.noise_type == "gaussian":
-            sigma = denoise_noise_param
-            x_hat = y + sigma ** 2 * score
-
-        elif self.noise_type == "poisson":
-            peak = denoise_noise_param
-            x_hat = (y + 1.0 / (2.0 * peak)) * torch.exp(score / peak)
-
-        elif self.noise_type == "gamma":
-            alpha = denoise_noise_param
-            denom = (alpha - 1.0) - y * score
-            denom = denom.clamp_min(1e-6)
-            x_hat = alpha * y / denom
-
-        else:
-            raise NotImplementedError(f"Unknown noise_type: {self.noise_type}")
-
-        if self.clamp:
-            x_hat = x_hat.clamp(0, 1)
-
-        return x_hat
+    def denoise_from_score(self, y, score, noise_param, smoothing=0.0):
+        return denoise_from_score(
+            y=y,
+            score=score,
+            noise_type=self.noise_type,
+            noise_param=noise_param,
+            clamp=self.clamp,
+            smoothing=smoothing,
+        )
 
     def _resolve_score_noise_param(self, noise_param=None, score_sigma=None):
         if score_sigma is not None:
@@ -133,3 +152,60 @@ class Noise2Score(nn.Module):
                  use_metric = config.use_metric,
                  use_gaussian_smoothing = config.use_gaussian_smoothing,
             )
+
+
+class GaussianNoise2Score(Noise2Score):
+    def __init__(self, *args, **kwargs):
+        args, kwargs = _with_noise_type(args, kwargs, "gaussian")
+        super().__init__(*args, **kwargs)
+
+    def denoise_from_score(self, y, score, noise_param, smoothing=0.0):
+        x_hat = y + noise_param ** 2 * score
+        if self.clamp:
+            x_hat = x_hat.clamp(0, 1)
+        return x_hat
+
+
+class PoissonNoise2Score(Noise2Score):
+    def __init__(self, *args, **kwargs):
+        args, kwargs = _with_noise_type(args, kwargs, "poisson")
+        super().__init__(*args, **kwargs)
+
+    def denoise_from_score(self, y, score, noise_param, smoothing=0.0):
+        smoothing = float(smoothing or 0.0)
+        if smoothing > 0.0:
+            x_hat = y + smoothing ** 2 * score
+        else:
+            peak = noise_param
+            x_hat = (y + 1.0 / (2.0 * peak)) * torch.exp(score / peak)
+
+        if self.clamp:
+            x_hat = x_hat.clamp(0, 1)
+        return x_hat
+
+
+class GammaNoise2Score(Noise2Score):
+    def __init__(self, *args, **kwargs):
+        args, kwargs = _with_noise_type(args, kwargs, "gamma")
+        super().__init__(*args, **kwargs)
+
+    def denoise_from_score(self, y, score, noise_param, smoothing=0.0):
+        smoothing = float(smoothing or 0.0)
+        if smoothing > 0.0:
+            x_hat = y + smoothing ** 2 * score
+        else:
+            alpha = noise_param
+            denom = (alpha - 1.0) - y * score
+            denom = denom.clamp_min(1e-6)
+            x_hat = alpha * y / denom
+
+        if self.clamp:
+            x_hat = x_hat.clamp(0, 1)
+        return x_hat
+
+
+Noise2Score._distribution_classes = {
+    "gaussian": GaussianNoise2Score,
+    "poisson": PoissonNoise2Score,
+    "gamma": GammaNoise2Score,
+}

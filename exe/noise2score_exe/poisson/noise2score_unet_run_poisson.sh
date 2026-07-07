@@ -6,7 +6,7 @@ NOISE=poisson
 SHAPE=128
 CHANNELS=3
 INPUT_DIM=$((CHANNELS * SHAPE * SHAPE))
-INDEX="_lam001_005_smoothing"
+INDEX="_lam001_005_smoothing_001"
 
 
 
@@ -29,14 +29,15 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score.py \
   --patch-size $SHAPE \
   --stride 128 \
   --channels $CHANNELS \
-  --max-patches-per-image 128 \
   --num-workers 1 \
   --recursive-images \
   --noise-type "$NOISE" \
-  --noise-param 50 \
+  --poisson-peak 50 \
   --output-dir "results/n2s_unet_${DATA}_${NOISE}" \
   --save-output \
   --copy-info \
   --score-sigma 0.1 \
-  --smoothing 0.1 #\
-  #--save-output-limit 64
+  --smoothing 0.1 \
+  --stitch-output \
+  --stitch-format png \
+  --save-output-limit 4

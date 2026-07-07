@@ -2,7 +2,7 @@ set -euo pipefail
 
 GPU=1
 
-CUDA_VISIBLE_DEVICES=$GPU python train_ardae.py \
+CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
   --data datasets/processed/bsd400_patches_8x8.npy \
   --input-dim 64 \
   --epochs 10 \

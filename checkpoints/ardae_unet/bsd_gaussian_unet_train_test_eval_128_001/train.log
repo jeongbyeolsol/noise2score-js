@@ -1,0 +1,79 @@
+save_dir: checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001
+requested_save_dir already existed; using: checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001
+device: cuda
+data: datasets/BSD400_processed
+num_images: 400
+patch_size: 128
+stride: 128
+unet_image_shape: (1, 128, 128)
+patch_loader: stream
+num_patches: 400
+num_train_patches: 360
+num_val_patches: 40
+epoch 0001/0064 train_loss=0.980622 val_loss=0.918047 best_val=0.918047@0001 train_nmse=0.999984 val_nmse=0.999882 train_cos=0.110913 val_cos=0.364542
+epoch 0002/0064 train_loss=0.913127 val_loss=0.909878 best_val=0.909878@0002 train_nmse=0.999824 val_nmse=0.999702 train_cos=0.393141 val_cos=0.365817
+epoch 0003/0064 train_loss=0.864572 val_loss=0.881341 best_val=0.881341@0003 train_nmse=0.999686 val_nmse=0.999393 train_cos=0.438212 val_cos=0.405392
+epoch 0004/0064 train_loss=0.838152 val_loss=0.868427 best_val=0.868427@0004 train_nmse=0.999540 val_nmse=0.999521 train_cos=0.483416 val_cos=0.437999
+epoch 0005/0064 train_loss=0.835182 val_loss=0.856088 best_val=0.856088@0005 train_nmse=0.999430 val_nmse=0.999363 train_cos=0.473553 val_cos=0.427344
+epoch 0006/0064 train_loss=0.813515 val_loss=0.726484 best_val=0.726484@0006 train_nmse=0.999200 val_nmse=0.999384 train_cos=0.497004 val_cos=0.570210
+epoch 0007/0064 train_loss=0.813758 val_loss=0.886333 best_val=0.726484@0006 train_nmse=0.999292 val_nmse=0.999475 train_cos=0.467325 val_cos=0.369124
+epoch 0008/0064 train_loss=0.829833 val_loss=0.759362 best_val=0.726484@0006 train_nmse=0.999194 val_nmse=0.999070 train_cos=0.481469 val_cos=0.534672
+epoch 0009/0064 train_loss=0.779571 val_loss=0.810692 best_val=0.726484@0006 train_nmse=0.998942 val_nmse=0.999064 train_cos=0.528612 val_cos=0.474061
+epoch 0010/0064 train_loss=0.821550 val_loss=0.760170 best_val=0.726484@0006 train_nmse=0.998740 val_nmse=0.998642 train_cos=0.491036 val_cos=0.525733
+epoch 0011/0064 train_loss=0.796557 val_loss=0.730293 best_val=0.726484@0006 train_nmse=0.998913 val_nmse=0.999296 train_cos=0.512990 val_cos=0.526269
+epoch 0012/0064 train_loss=0.781812 val_loss=0.702021 best_val=0.702021@0012 train_nmse=0.998963 val_nmse=0.999412 train_cos=0.523707 val_cos=0.574267
+epoch 0013/0064 train_loss=0.761251 val_loss=0.762741 best_val=0.702021@0012 train_nmse=0.998764 val_nmse=0.998393 train_cos=0.553773 val_cos=0.549559
+epoch 0014/0064 train_loss=0.789224 val_loss=0.721028 best_val=0.702021@0012 train_nmse=0.998380 val_nmse=0.998248 train_cos=0.535482 val_cos=0.579890
+epoch 0015/0064 train_loss=0.762247 val_loss=0.739009 best_val=0.702021@0012 train_nmse=0.998513 val_nmse=0.997737 train_cos=0.557208 val_cos=0.603134
+epoch 0016/0064 train_loss=0.729063 val_loss=0.737831 best_val=0.702021@0012 train_nmse=0.998536 val_nmse=0.998230 train_cos=0.596252 val_cos=0.592045
+epoch 0017/0064 train_loss=0.737750 val_loss=0.717126 best_val=0.702021@0012 train_nmse=0.998331 val_nmse=0.998858 train_cos=0.583245 val_cos=0.596823
+epoch 0018/0064 train_loss=0.751442 val_loss=0.726218 best_val=0.702021@0012 train_nmse=0.998434 val_nmse=0.999044 train_cos=0.580520 val_cos=0.510605
+epoch 0019/0064 train_loss=0.766434 val_loss=0.802003 best_val=0.702021@0012 train_nmse=0.998292 val_nmse=0.998394 train_cos=0.564555 val_cos=0.536670
+epoch 0020/0064 train_loss=0.771355 val_loss=0.818518 best_val=0.702021@0012 train_nmse=0.998101 val_nmse=0.997106 train_cos=0.567090 val_cos=0.486349
+epoch 0021/0064 train_loss=0.773144 val_loss=0.785059 best_val=0.702021@0012 train_nmse=0.997640 val_nmse=0.998529 train_cos=0.568393 val_cos=0.528843
+epoch 0022/0064 train_loss=0.762330 val_loss=0.810778 best_val=0.702021@0012 train_nmse=0.997828 val_nmse=0.998429 train_cos=0.574437 val_cos=0.520687
+epoch 0023/0064 train_loss=0.761751 val_loss=0.824500 best_val=0.702021@0012 train_nmse=0.997610 val_nmse=0.996250 train_cos=0.578794 val_cos=0.528964
+epoch 0024/0064 train_loss=0.717631 val_loss=0.679976 best_val=0.679976@0024 train_nmse=0.997877 val_nmse=0.998247 train_cos=0.592512 val_cos=0.612175
+epoch 0025/0064 train_loss=0.742101 val_loss=0.747692 best_val=0.679976@0024 train_nmse=0.997624 val_nmse=0.998462 train_cos=0.594851 val_cos=0.582413
+epoch 0026/0064 train_loss=0.751119 val_loss=0.839003 best_val=0.679976@0024 train_nmse=0.997350 val_nmse=0.998189 train_cos=0.586882 val_cos=0.501919
+epoch 0027/0064 train_loss=0.748198 val_loss=0.666508 best_val=0.666508@0027 train_nmse=0.997930 val_nmse=0.998734 train_cos=0.586358 val_cos=0.652501
+epoch 0028/0064 train_loss=0.730738 val_loss=0.793938 best_val=0.666508@0027 train_nmse=0.997881 val_nmse=0.996553 train_cos=0.604482 val_cos=0.567616
+epoch 0029/0064 train_loss=0.714396 val_loss=0.675655 best_val=0.666508@0027 train_nmse=0.997893 val_nmse=0.998274 train_cos=0.613406 val_cos=0.588630
+epoch 0030/0064 train_loss=0.755849 val_loss=0.772296 best_val=0.666508@0027 train_nmse=0.996528 val_nmse=0.996893 train_cos=0.590488 val_cos=0.589715
+epoch 0031/0064 train_loss=0.726781 val_loss=0.754054 best_val=0.666508@0027 train_nmse=0.997600 val_nmse=0.998068 train_cos=0.585744 val_cos=0.512159
+epoch 0032/0064 train_loss=0.744025 val_loss=0.869801 best_val=0.666508@0027 train_nmse=0.997596 val_nmse=0.998816 train_cos=0.568806 val_cos=0.415088
+epoch 0033/0064 train_loss=0.714449 val_loss=0.729810 best_val=0.666508@0027 train_nmse=0.997620 val_nmse=0.996804 train_cos=0.594012 val_cos=0.615747
+epoch 0034/0064 train_loss=0.679845 val_loss=0.757548 best_val=0.666508@0027 train_nmse=0.998037 val_nmse=0.997786 train_cos=0.594501 val_cos=0.531980
+epoch 0035/0064 train_loss=0.705969 val_loss=0.781485 best_val=0.666508@0027 train_nmse=0.997609 val_nmse=0.996954 train_cos=0.577615 val_cos=0.529597
+epoch 0036/0064 train_loss=0.710062 val_loss=0.737073 best_val=0.666508@0027 train_nmse=0.996704 val_nmse=0.997281 train_cos=0.619677 val_cos=0.518796
+epoch 0037/0064 train_loss=0.719334 val_loss=0.677589 best_val=0.666508@0027 train_nmse=0.996719 val_nmse=0.998352 train_cos=0.606689 val_cos=0.569054
+epoch 0038/0064 train_loss=0.706206 val_loss=0.722783 best_val=0.666508@0027 train_nmse=0.997238 val_nmse=0.997351 train_cos=0.581047 val_cos=0.577838
+epoch 0039/0064 train_loss=0.718137 val_loss=0.759045 best_val=0.666508@0027 train_nmse=0.997008 val_nmse=0.998004 train_cos=0.569386 val_cos=0.499763
+epoch 0040/0064 train_loss=0.670701 val_loss=0.674747 best_val=0.666508@0027 train_nmse=0.995983 val_nmse=0.998053 train_cos=0.620585 val_cos=0.520022
+epoch 0041/0064 train_loss=0.717169 val_loss=0.684603 best_val=0.666508@0027 train_nmse=0.996949 val_nmse=0.997489 train_cos=0.582345 val_cos=0.631981
+epoch 0042/0064 train_loss=0.694581 val_loss=0.722245 best_val=0.666508@0027 train_nmse=0.997339 val_nmse=0.993951 train_cos=0.586931 val_cos=0.567807
+epoch 0043/0064 train_loss=0.681622 val_loss=0.679216 best_val=0.666508@0027 train_nmse=0.996206 val_nmse=0.998052 train_cos=0.602358 val_cos=0.591617
+epoch 0044/0064 train_loss=0.703268 val_loss=0.691385 best_val=0.666508@0027 train_nmse=0.996345 val_nmse=0.996508 train_cos=0.601257 val_cos=0.558051
+epoch 0045/0064 train_loss=0.680098 val_loss=0.663053 best_val=0.663053@0045 train_nmse=0.996282 val_nmse=0.996979 train_cos=0.617635 val_cos=0.619030
+epoch 0046/0064 train_loss=0.686087 val_loss=0.749040 best_val=0.663053@0045 train_nmse=0.996094 val_nmse=0.992961 train_cos=0.614519 val_cos=0.575192
+epoch 0047/0064 train_loss=0.683666 val_loss=0.761377 best_val=0.663053@0045 train_nmse=0.996509 val_nmse=0.995266 train_cos=0.603251 val_cos=0.556633
+epoch 0048/0064 train_loss=0.698070 val_loss=0.625621 best_val=0.625621@0048 train_nmse=0.996310 val_nmse=0.996680 train_cos=0.592498 val_cos=0.659552
+epoch 0049/0064 train_loss=0.689308 val_loss=0.688808 best_val=0.625621@0048 train_nmse=0.995718 val_nmse=0.996743 train_cos=0.602844 val_cos=0.619425
+epoch 0050/0064 train_loss=0.674319 val_loss=0.658767 best_val=0.625621@0048 train_nmse=0.994784 val_nmse=0.994013 train_cos=0.624361 val_cos=0.604182
+epoch 0051/0064 train_loss=0.693063 val_loss=0.573707 best_val=0.573707@0051 train_nmse=0.996142 val_nmse=0.986538 train_cos=0.588622 val_cos=0.723263
+epoch 0052/0064 train_loss=0.693875 val_loss=0.728371 best_val=0.573707@0051 train_nmse=0.995538 val_nmse=0.996537 train_cos=0.601665 val_cos=0.556974
+epoch 0053/0064 train_loss=0.663292 val_loss=0.779750 best_val=0.573707@0051 train_nmse=0.994897 val_nmse=0.995608 train_cos=0.620154 val_cos=0.522994
+epoch 0054/0064 train_loss=0.648017 val_loss=0.638386 best_val=0.573707@0051 train_nmse=0.995717 val_nmse=0.994549 train_cos=0.633370 val_cos=0.633628
+epoch 0055/0064 train_loss=0.687450 val_loss=0.665507 best_val=0.573707@0051 train_nmse=0.995472 val_nmse=0.993080 train_cos=0.605137 val_cos=0.641674
+epoch 0056/0064 train_loss=0.675630 val_loss=0.764496 best_val=0.573707@0051 train_nmse=0.995699 val_nmse=0.996440 train_cos=0.609304 val_cos=0.520130
+epoch 0057/0064 train_loss=0.656079 val_loss=0.671947 best_val=0.573707@0051 train_nmse=0.994878 val_nmse=0.994915 train_cos=0.624439 val_cos=0.583408
+epoch 0058/0064 train_loss=0.644471 val_loss=0.723348 best_val=0.573707@0051 train_nmse=0.994622 val_nmse=0.994765 train_cos=0.622381 val_cos=0.535037
+epoch 0059/0064 train_loss=0.636396 val_loss=0.708176 best_val=0.573707@0051 train_nmse=0.995409 val_nmse=0.995563 train_cos=0.628690 val_cos=0.579381
+epoch 0060/0064 train_loss=0.670034 val_loss=0.734958 best_val=0.573707@0051 train_nmse=0.994655 val_nmse=0.996118 train_cos=0.610264 val_cos=0.540170
+epoch 0061/0064 train_loss=0.686430 val_loss=0.682718 best_val=0.573707@0051 train_nmse=0.995142 val_nmse=0.995602 train_cos=0.583203 val_cos=0.584054
+epoch 0062/0064 train_loss=0.638879 val_loss=0.711686 best_val=0.573707@0051 train_nmse=0.993854 val_nmse=0.996326 train_cos=0.637385 val_cos=0.528765
+epoch 0063/0064 train_loss=0.687196 val_loss=0.728828 best_val=0.573707@0051 train_nmse=0.995428 val_nmse=0.993879 train_cos=0.594885 val_cos=0.564978
+epoch 0064/0064 train_loss=0.677230 val_loss=0.606771 best_val=0.573707@0051 train_nmse=0.994579 val_nmse=0.996673 train_cos=0.595737 val_cos=0.638825
+saved last checkpoint: checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001/last_epoch_0064.pt
+saved best checkpoint: checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001/best_model.pt
+saved metrics: checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001/metrics.csv

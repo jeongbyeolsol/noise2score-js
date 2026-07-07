@@ -1,28 +1,41 @@
 #!/usr/bin/env bash
 
 GPU=0
+<<<<<<< HEAD
 DATA=bsd68
+=======
+DATA=BSD68
+>>>>>>> noise2score-codex
 NOISE=gaussian
 SHAPE=128
-INPUT_DIM=$((SHAPE * SHAPE)) 
+CHANNELS=1
+INPUT_DIM=$((CHANNELS * SHAPE * SHAPE))
+INDEX="_003"
+CLEAN_DATA="datasets/${DATA}_processed/"
 
-if [ "$DATA" = "bsd400" ]; then
-    PROCESSED=processed
-elif [ "$DATA" = "bsd68" ]; then 
-    PROCESSED=processed_test
-else
-    echo "잘못된 DATA: $DATA"
-    exit 1
-fi
 
+<<<<<<< HEAD
 CUDA_VISIBLE_DEVICES=$GPU python run_noise2score.py \
   --checkpoint "checkpoints/ardae_unet/${NOISE}_002/best_model.pt" \
   --clean-data "datasets/${PROCESSED}/${DATA}_patches_${SHAPE}x${SHAPE}.npy" \
+=======
+CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score.py \
+  --checkpoint "checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128_001/best_model.pt" \
+  --clean-data ${CLEAN_DATA} \
+  --data-mode image-folder \
+>>>>>>> noise2score-codex
   --input-dim $INPUT_DIM \
+  --batch-size 128 \
+  --image-shape $CHANNELS $SHAPE $SHAPE \
+  --patch-size $SHAPE \
+  --stride 128 \
+  --channels $CHANNELS \
   --noise-type "$NOISE" \
   --noise-param 0.1 \
   --score-sigma 0.1 \
+  --recursive-images \
   --output-dir "results/n2s_unet_${DATA}_${NOISE}" \
   --save-output \
-  --save-output-limit 64 \
-  --copy-info
+  --copy-info \
+  --stitch-output \
+  --stitch-format png 

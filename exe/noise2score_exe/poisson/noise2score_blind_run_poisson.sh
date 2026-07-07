@@ -6,7 +6,7 @@ NOISE=poisson
 SHAPE=128
 CHANNELS=3
 INPUT_DIM=$((CHANNELS * SHAPE * SHAPE))
-INDEX="_lam001_005_smoothing"
+INDEX="_lam001_005_smoothing_001"
 
 if [ "$DATA" = "DIV2K_train_HR" ]; then
     CLEAN_DATA="datasets/DIV2K_train_HR_processed"
@@ -24,14 +24,20 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score_blind.py \
   --batch-size 128 \
   --data-mode image-folder \
   --image-shape $CHANNELS $SHAPE $SHAPE \
+  --patch-size $SHAPE \
+  --stride 64 \
+  --channels $CHANNELS \
   --noise-type "$NOISE" \
-  --noise-param 50 \
+  --poisson-peak 50 \
   --candidate-params 50 \
   --candidate-smoothing 0.03,0.05,0.075,0.1,0.125,0.15,0.2 \
   --score-sigma-mode same \
   --tv-weight 1.0 \
   --data-weight 0.0 \
-  --output-dir "results/n2s_unet_blind_${DATA}_${NOISE}_${INDEX}" \
+  --output-dir "results/poisson/n2s_unet_blind_${DATA}_${NOISE}_${INDEX}" \
   --save-output \
   --copy-info \
-  --smoothing 0.1
+  --smoothing 0.1 \
+  --stitch-output \
+  --stitch-format png \
+  --save-output-limit 4

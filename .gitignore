@@ -9,12 +9,19 @@ venv/
 
 experiments/
 logs/
+trash_box/
+
 
 samples/
 datasets/
 
+
+*.zip
 *.zst
 *.npy
+*.jpg
+*.png
 
 !*.json
 !*.csv
+
