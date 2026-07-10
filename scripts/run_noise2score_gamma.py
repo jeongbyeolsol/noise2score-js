@@ -9,4 +9,5 @@ from scripts.run_noise2score_base import build_parser, run
 
 
 if __name__ == "__main__":
-    run(parse_noise2score_args(build_parser))
+    args = parse_noise2score_args(build_parser, noise_type="gamma")
+    run(args, forced_noise_type="gamma")

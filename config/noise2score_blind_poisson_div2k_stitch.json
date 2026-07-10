@@ -1,0 +1,44 @@
+{
+  "checkpoint": {
+    "checkpoint": "checkpoints/ardae_unet/poisson_lam001_005_smoothing_001/best_model.pt"
+  },
+  "data": {
+    "clean_data": "datasets/DIV2K_valid_HR_processed",
+    "data_mode": "image-folder"
+  },
+  "runtime": {
+    "input_dim": 49152,
+    "batch_size": 128,
+    "num_workers": 0,
+    "device": "cuda"
+  },
+  "image": {
+    "image_shape": [3, 128, 128],
+    "patch_size": 128,
+    "stride": 64,
+    "channels": 3
+  },
+  "noise": {
+    "noise_type": "poisson",
+    "smoothing": 0.1,
+    "smoothing_samples": 8
+  },
+  "poisson": {
+    "peak": 50,
+    "candidate_peaks": [50]
+  },
+  "blind": {
+    "candidate_smoothing": [0.03, 0.05, 0.075, 0.1, 0.125, 0.15, 0.2],
+    "score_sigma_mode": "same",
+    "tv_weight": 1.0,
+    "data_weight": 0.0
+  },
+  "output": {
+    "output_dir": "results/poisson/n2s_unet_blind_DIV2K_valid_HR_poisson_lam001_005_smoothing_001",
+    "save_output": true,
+    "save_output_limit": 4,
+    "copy_info": true,
+    "stitch_output": true,
+    "stitch_format": "png"
+  }
+}

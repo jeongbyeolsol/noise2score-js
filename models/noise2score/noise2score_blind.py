@@ -1,7 +1,7 @@
 import torch
 from torch.nn import functional as F
 
-from models.noise2score import Noise2Score
+from models.noise2score.noise2score_base import Noise2Score
 
 
 class Noise2ScoreBlind(Noise2Score):

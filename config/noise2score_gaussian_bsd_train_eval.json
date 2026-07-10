@@ -1,0 +1,51 @@
+{
+  "data": {
+    "clean_data": "datasets/BSD68_processed",
+    "data_mode": "image-folder"
+  },
+  "runtime": {
+    "input_dim": 16384,
+    "batch_size": 128,
+    "num_workers": 0,
+    "seed": 0,
+    "device": "cuda"
+  },
+  "image": {
+    "image_shape": [1, 128, 128],
+    "patch_size": 128,
+    "stride": 128,
+    "channels": 1
+  },
+  "noise": {
+    "noise_type": "gaussian",
+    "score_sigma": 0.1
+  },
+  "gaussian": {
+    "sigma": 0.1
+  },
+  "ardae": {
+    "train": true,
+    "test": true,
+    "train_data": "datasets/BSD400_processed",
+    "train_data_mode": "image-folder",
+    "test_data": "datasets/BSD68_processed",
+    "test_data_mode": "image-folder",
+    "save_dir": "checkpoints/ardae_unet/bsd_gaussian_unet_train_test_eval_128",
+    "test_output_dir": "results/bsd_gaussian_unet_ardae_test",
+    "epochs": 64,
+    "batch_size": 128,
+    "backbone": "unet",
+    "base_channels": 32,
+    "channel_mults": "1,2,4",
+    "nonlinearity": "silu",
+    "sigma_min": 0.001,
+    "sigma_max": 0.5,
+    "use_metric": true
+  },
+  "output": {
+    "output_dir": "results/n2s_bsd_gaussian_unet_train_test_eval_128",
+    "save_output": true,
+    "save_output_limit": 64,
+    "copy_info": true
+  }
+}

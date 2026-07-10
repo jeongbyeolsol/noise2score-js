@@ -3,5 +3,6 @@ from .noise2score import (
     GammaNoise2Score,
     GaussianNoise2Score,
     Noise2Score,
+    Noise2ScoreBlind,
     PoissonNoise2Score,
 )

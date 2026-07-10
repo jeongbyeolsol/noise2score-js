@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 
-from models.ardae import ARDAE
+from models.ardae.ardae_base import ARDAE
 from config import ARDAEConfig
 from utils import denoise_from_score
 
@@ -153,59 +153,3 @@ class Noise2Score(nn.Module):
                  use_gaussian_smoothing = config.use_gaussian_smoothing,
             )
 
-
-class GaussianNoise2Score(Noise2Score):
-    def __init__(self, *args, **kwargs):
-        args, kwargs = _with_noise_type(args, kwargs, "gaussian")
-        super().__init__(*args, **kwargs)
-
-    def denoise_from_score(self, y, score, noise_param, smoothing=0.0):
-        x_hat = y + noise_param ** 2 * score
-        if self.clamp:
-            x_hat = x_hat.clamp(0, 1)
-        return x_hat
-
-
-class PoissonNoise2Score(Noise2Score):
-    def __init__(self, *args, **kwargs):
-        args, kwargs = _with_noise_type(args, kwargs, "poisson")
-        super().__init__(*args, **kwargs)
-
-    def denoise_from_score(self, y, score, noise_param, smoothing=0.0):
-        smoothing = float(smoothing or 0.0)
-        if smoothing > 0.0:
-            x_hat = y + smoothing ** 2 * score
-        else:
-            peak = noise_param
-            x_hat = (y + 1.0 / (2.0 * peak)) * torch.exp(score / peak)
-
-        if self.clamp:
-            x_hat = x_hat.clamp(0, 1)
-        return x_hat
-
-
-class GammaNoise2Score(Noise2Score):
-    def __init__(self, *args, **kwargs):
-        args, kwargs = _with_noise_type(args, kwargs, "gamma")
-        super().__init__(*args, **kwargs)
-
-    def denoise_from_score(self, y, score, noise_param, smoothing=0.0):
-        smoothing = float(smoothing or 0.0)
-        if smoothing > 0.0:
-            x_hat = y + smoothing ** 2 * score
-        else:
-            alpha = noise_param
-            denom = (alpha - 1.0) - y * score
-            denom = denom.clamp_min(1e-6)
-            x_hat = alpha * y / denom
-
-        if self.clamp:
-            x_hat = x_hat.clamp(0, 1)
-        return x_hat
-
-
-Noise2Score._distribution_classes = {
-    "gaussian": GaussianNoise2Score,
-    "poisson": PoissonNoise2Score,
-    "gamma": GammaNoise2Score,
-}
