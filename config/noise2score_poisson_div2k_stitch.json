@@ -20,17 +20,18 @@
   "noise": {
     "noise_type": "poisson",
     "score_sigma": 0.1,
-    "smoothing": 0.1,
-    "smoothing_samples": 8
+    "score_smoothing": 0.1,
+    "score_smoothing_samples": 8
   },
   "poisson": {
-    "peak": 50
+    "lam_min": 0.01,
+    "lam_max": 0.05
   },
   "ardae": {
     "train": true,
     "train_data": "datasets/DIV2K_train_HR_processed",
     "train_data_mode": "image-folder",
-    "save_dir": "checkpoints/ardae_unet/div2k_poisson_unet_stitch_128",
+    "save_dir": "checkpoints/ardae_unet/div2k_poisson_unet_gaussian_perturb_128",
     "epochs": 64,
     "batch_size": 128,
     "backbone": "unet",
@@ -39,13 +40,13 @@
     "nonlinearity": "silu",
     "patch_loader": "stream",
     "max_patches_per_image": 128,
-    "smoothing": "range",
+    "gaussian_perturbation": "range",
     "sigma_min": 0.03,
     "sigma_max": 0.22,
     "use_metric": true
   },
   "output": {
-    "output_dir": "results/n2s_div2k_poisson_unet_stitch_128",
+    "output_dir": "results/n2s_div2k_poisson_unet_gaussian_perturb_128",
     "stitch_output": true,
     "stitch_format": "both",
     "save_output": true,

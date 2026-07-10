@@ -9,7 +9,7 @@ INPUT_DIM=$((SHAPE * SHAPE))
 BATCH_SIZE=256
 NOISE='gaussian'
 
-CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
+CUDA_VISIBLE_DEVICES=$GPU python ./models/ardae/train_ardae.py \
   --data "$DATA" \
   --input-dim $INPUT_DIM \
   --epochs $EPOCH \

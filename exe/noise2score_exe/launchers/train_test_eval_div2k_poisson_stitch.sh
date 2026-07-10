@@ -11,7 +11,7 @@ SEED="${SEED:-0}"
 
 NOISE="${NOISE:-poisson}"
 POISSON_PEAK="${POISSON_PEAK:-${NOISE_PARAM:-50}}"
-SMOOTHING="${SMOOTHING:-0.1}"
+SCORE_SMOOTHING="${SCORE_SMOOTHING:-${SMOOTHING:-0.1}}"
 SCORE_SIGMA="${SCORE_SIGMA:-0.1}"
 
 SHAPE="${SHAPE:-128}"
@@ -28,7 +28,7 @@ ARDAE_BATCH_SIZE="${ARDAE_BATCH_SIZE:-128}"
 EPOCHS="${EPOCHS:-64}"
 NUM_WORKERS="${NUM_WORKERS:-0}"
 
-RUN_NAME="${RUN_NAME:-div2k_${NOISE}_unet_stitch_${SHAPE}}"
+RUN_NAME="${RUN_NAME:-div2k_${NOISE}_unet_gaussian_perturb_${SHAPE}}"
 ARDAE_SAVE_DIR="${ARDAE_SAVE_DIR:-checkpoints/ardae_unet/${RUN_NAME}}"
 OUTPUT_DIR="${OUTPUT_DIR:-results/n2s_${RUN_NAME}}"
 
@@ -52,8 +52,8 @@ cmd=(
   --noise-type "$NOISE"
   --poisson-peak "$POISSON_PEAK"
   --score-sigma "$SCORE_SIGMA"
-  --smoothing "$SMOOTHING"
-  --smoothing-samples "${SMOOTHING_SAMPLES:-8}"
+  --score-smoothing "$SCORE_SMOOTHING"
+  --score-smoothing-samples "${SCORE_SMOOTHING_SAMPLES:-${SMOOTHING_SAMPLES:-8}}"
   --train-ardae
   --ardae-save-dir "$ARDAE_SAVE_DIR"
   --ardae-epochs "$EPOCHS"
@@ -63,7 +63,7 @@ cmd=(
   --ardae-nonlinearity "${NONLINEARITY:-silu}"
   --ardae-patch-loader "${PATCH_LOADER:-stream}"
   --ardae-max-patches-per-image "${ARDAE_MAX_PATCHES_PER_IMAGE:-128}"
-  --ardae-smoothing
+  --ardae-gaussian-perturbation
   --ardae-sigma-min "${SIGMA_MIN:-0.03}"
   --ardae-sigma-max "${SIGMA_MAX:-0.22}"
   --ardae-use-metric

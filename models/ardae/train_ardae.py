@@ -116,8 +116,8 @@ def parse_args():
         type=float,
         default=0.001,
         help=(
-            "Minimum ARDAE training noise level. With --smoothing this is Gaussian "
-            "smoothing sigma; otherwise it is the distribution parameter "
+            "Minimum ARDAE training noise level. With --gaussian-perturbation this is Gaussian "
+            "perturbation sigma; otherwise it is the distribution parameter "
             "(poisson peak, not lam)."
         ),
     )
@@ -126,21 +126,23 @@ def parse_args():
         type=float,
         default=0.5,
         help=(
-            "Maximum ARDAE training noise level. With --smoothing this is Gaussian "
-            "smoothing sigma; otherwise it is the distribution parameter "
+            "Maximum ARDAE training noise level. With --gaussian-perturbation this is Gaussian "
+            "perturbation sigma; otherwise it is the distribution parameter "
             "(poisson peak, not lam)."
         ),
     )
     parser.add_argument("--linear-sigma", action="store_true", help="Sample noise levels uniformly in linear scale instead of log scale.")
     parser.add_argument(
+        "--gaussian-perturbation",
         "--smoothing",
+        dest="smoothing",
         nargs="?",
         const="range",
         default=None,
         help=(
-            "Enable original-style Gaussian smoothing for ARDAE training. "
+            "Train ARDAE with Gaussian perturbation noise. "
             "Use without a value to sample sigma from --sigma-min/--sigma-max, "
-            "or pass a positive value for fixed sigma."
+            "or pass a positive value for fixed sigma. --smoothing is kept as a deprecated alias."
         ),
     )
 
@@ -170,7 +172,7 @@ def prepare_args(args):
     if args.smoothing not in (None, "range"):
         args.smoothing_sigma = float(args.smoothing)
         if args.smoothing_sigma <= 0:
-            raise ValueError("--smoothing value must be positive.")
+            raise ValueError("--gaussian-perturbation value must be positive.")
 
     return args
 

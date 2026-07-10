@@ -91,13 +91,18 @@ def _noise2score_config_from_args(args, blind=False):
     config = {
         "noise_type": args.noise_type,
         "noise_param": args.noise_param,
+        "noise_param_min": getattr(args, "noise_param_min", None),
+        "noise_param_max": getattr(args, "noise_param_max", None),
+        "linear_noise_param": getattr(args, "linear_noise_param", False),
         "score_sigma": args.score_sigma,
         "clamp": not getattr(args, "no_clamp", False),
     }
     if hasattr(args, "smoothing"):
         config["smoothing"] = args.smoothing
+        config["score_smoothing"] = args.smoothing
     if hasattr(args, "smoothing_samples"):
         config["smoothing_samples"] = args.smoothing_samples
+        config["score_smoothing_samples"] = args.smoothing_samples
     if getattr(args, "noise_type", None) == "poisson":
         config["poisson_peak"] = getattr(args, "poisson_peak", args.noise_param)
         config["poisson_lam"] = getattr(args, "poisson_lam", None)

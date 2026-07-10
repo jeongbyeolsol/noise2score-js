@@ -11,7 +11,7 @@ BATCH_SIZE=128
 NUM_WORKERS=0
 NOISE="poisson"
 
-CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
+CUDA_VISIBLE_DEVICES=$GPU python ./models/ardae/train_ardae.py \
   --data "$DATA" \
   --data-mode image-folder \
   --input-dim $INPUT_DIM \
@@ -32,8 +32,8 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/train_ardae.py \
   --nonlinearity silu \
   --noise-type $NOISE \
   --poisson-peak 50 \
-  --smoothing 0.1 \
-  --save-dir checkpoints/ardae_unet/poisson_lam001_005_smoothing \
+  --gaussian-perturbation 0.1 \
+  --save-dir checkpoints/ardae_unet/poisson_lam001_005_gaussian_perturb \
   --use-metric \
   --recursive-images \
-  > log_ardae_unet_poisson_lam001_005_smoothing.txt
+  > log_ardae_unet_poisson_lam001_005_gaussian_perturb.txt

@@ -7,6 +7,7 @@ SHAPE=128
 CHANNELS=3
 INPUT_DIM=$((CHANNELS * SHAPE * SHAPE))
 INDEX="_lam001_005_smoothing_001"
+OUTPUT_INDEX="_lam001_005_gaussian_perturb_001"
 
 
 
@@ -33,11 +34,11 @@ CUDA_VISIBLE_DEVICES=$GPU python ./scripts/run_noise2score.py \
   --recursive-images \
   --noise-type "$NOISE" \
   --poisson-peak 50 \
-  --output-dir "results/n2s_unet_${DATA}_${NOISE}" \
+  --output-dir "results/n2s_unet_${DATA}_${NOISE}_${OUTPUT_INDEX}" \
   --save-output \
   --copy-info \
   --score-sigma 0.1 \
-  --smoothing 0.1 \
+  --score-smoothing 0.1 \
   --stitch-output \
   --stitch-format png \
   --save-output-limit 4

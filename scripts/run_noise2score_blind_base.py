@@ -22,10 +22,12 @@ from utils import (
     add_observation_noise,
     config_all_from_to,
     denoise_from_score,
+    make_observation_noise_param,
     make_unique_save_dir,
     move_batch,
     psnr_from_mse,
     save_config,
+    summarize_noise_param,
 )
 from utils.checkpoint import (
     get_ardae_checkpoint,
@@ -114,16 +116,37 @@ def build_parser():
         help="Alias for --noise-param when --noise-type poisson. Larger peak means weaker Poisson noise.",
     )
     parser.add_argument(
-        "--smoothing",
+        "--noise-param-min",
         type=float,
-        default=0.0,
-        help="Gaussian smoothing std for non-Gaussian Noise2Score denoising. 0 keeps the closed-form rule.",
+        default=None,
+        help="Min observation noise parameter for synthetic eval. Samples one value per sample.",
     )
     parser.add_argument(
+        "--noise-param-max",
+        type=float,
+        default=None,
+        help="Max observation noise parameter for synthetic eval. Samples one value per sample.",
+    )
+    parser.add_argument(
+        "--linear-noise-param",
+        action="store_true",
+        help="Sample observation noise parameters uniformly in linear scale instead of log scale.",
+    )
+    parser.add_argument(
+        "--score-smoothing",
+        "--smoothing",
+        dest="smoothing",
+        type=float,
+        default=0.0,
+        help="Gaussian perturbation std for Monte Carlo score smoothing. 0 keeps the closed-form rule. --smoothing is a deprecated alias.",
+    )
+    parser.add_argument(
+        "--score-smoothing-samples",
         "--smoothing-samples",
+        dest="smoothing_samples",
         type=int,
         default=8,
-        help="Monte Carlo samples used when --smoothing > 0.",
+        help="Monte Carlo samples used when score smoothing is enabled.",
     )
 
     # blind parameter candidates
@@ -134,13 +157,15 @@ def build_parser():
         help="Comma-separated candidate noise parameters. For poisson these are peak values.",
     )
     parser.add_argument(
+        "--candidate-score-smoothing",
         "--candidate-smoothing",
+        dest="candidate_smoothing",
         type=str,
         default=None,
         help=(
-            "Comma-separated Gaussian smoothing candidates for smoothed "
+            "Comma-separated Gaussian perturbation candidates for Monte Carlo score smoothing, "
             "non-Gaussian Noise2Score, e.g. 0.03,0.05,0.075,0.1,0.125,0.15,0.2. "
-            "With --score-sigma-mode same, score_sigma follows each smoothing candidate."
+            "With --score-sigma-mode same, score_sigma follows each score-smoothing candidate."
         ),
     )
     parser.add_argument("--param-min", type=float, default=None)
@@ -222,9 +247,20 @@ def apply_noise2score_checkpoint_config(args, checkpoint, forced_noise_type=None
             f"noise_type={ckpt_noise_type}."
         )
 
-    for name in ("noise_type", "noise_param", "score_sigma"):
+    for name in (
+        "noise_type",
+        "noise_param",
+        "noise_param_min",
+        "noise_param_max",
+        "linear_noise_param",
+        "score_sigma",
+    ):
         if name in n2s_config and n2s_config[name] is not None:
             setattr(args, name, n2s_config[name])
+    if n2s_config.get("score_smoothing") is not None:
+        args.smoothing = n2s_config["score_smoothing"]
+    if n2s_config.get("score_smoothing_samples") is not None:
+        args.smoothing_samples = n2s_config["score_smoothing_samples"]
 
     if args.noise_type == "poisson" and n2s_config.get("poisson_peak") is not None:
         args.poisson_peak = n2s_config["poisson_peak"]
@@ -247,6 +283,14 @@ def get_score_sigma(args, candidate_param, candidate_smoothing=None):
         return args.score_sigma
 
     raise ValueError(f"Unknown score_sigma_mode: {args.score_sigma_mode}")
+
+
+def _noise_param_list(noise_param):
+    if torch.is_tensor(noise_param):
+        return [float(v) for v in noise_param.detach().cpu().view(-1)]
+    if noise_param is None:
+        return None
+    return [float(noise_param)]
 
 
 def build_candidate_jobs(args, n2s, device):
@@ -275,11 +319,11 @@ def build_candidate_jobs(args, n2s, device):
         ], params_list, None
 
     if args.noise_type == "gaussian":
-        raise ValueError("--candidate-smoothing is intended for non-Gaussian smoothing.")
+        raise ValueError("--candidate-score-smoothing is intended for non-Gaussian score smoothing.")
 
     smoothing_list = [float(v) for v in candidate_smoothing]
     if any(v <= 0.0 for v in smoothing_list):
-        raise ValueError("--candidate-smoothing values must be > 0.")
+        raise ValueError("--candidate-score-smoothing values must be > 0.")
 
     if candidate_params is None and args.param_min is None and args.param_max is None:
         params_list = [float(args.noise_param)]
@@ -327,12 +371,14 @@ def stitch_blind_outputs(args, n2s, backbone, candidate_jobs, output_dir, device
         if args.noisy_data is not None:
             clean = None
             noisy = load_clean_image_tensor(image_path, channels=args.channels).to(device)
+            image_noise_param = None
         else:
             clean = load_clean_image_tensor(image_path, channels=args.channels).to(device)
+            image_noise_param = make_observation_noise_param(args, clean.unsqueeze(0))
             noisy = add_observation_noise(
                 x=clean.unsqueeze(0),
                 noise_type=args.noise_type,
-                noise_param=args.noise_param,
+                noise_param=image_noise_param,
             ).squeeze(0)
 
         channels, height, width = noisy.shape
@@ -447,6 +493,7 @@ def stitch_blind_outputs(args, n2s, backbone, candidate_jobs, output_dir, device
                 "width": width,
                 "channels": channels,
                 "num_patches": len(coords),
+                "true_noise_param": _noise_param_list(image_noise_param),
                 "estimated_noise_param": best["noise_param"],
                 "estimated_smoothing": best["smoothing"],
                 "estimated_score_sigma": best["score_sigma"],
@@ -470,6 +517,9 @@ def stitch_blind_outputs(args, n2s, backbone, candidate_jobs, output_dir, device
         "patch_size": patch_size,
         "stride": stride,
         "format": args.stitch_format,
+        "noise_param_min": args.noise_param_min,
+        "noise_param_max": args.noise_param_max,
+        "linear_noise_param": args.linear_noise_param,
         "noisy_mse": noisy_mse,
         "denoised_mse": denoised_mse,
         "noisy_psnr": psnr_from_mse(noisy_mse) if noisy_mse is not None else None,
@@ -496,11 +546,11 @@ def run(args, forced_noise_type=None):
     if args.score_sigma_mode == "fixed" and args.fixed_score_sigma is None:
         raise ValueError("--score-sigma-mode fixed requires --fixed-score-sigma.")
     if args.smoothing < 0:
-        raise ValueError("--smoothing must be >= 0.")
+        raise ValueError("--score-smoothing must be >= 0.")
     smoothing_enabled = args.smoothing > 0 or args.candidate_smoothing is not None
     if smoothing_enabled and args.smoothing_samples < 1:
         raise ValueError(
-            "--smoothing-samples must be >= 1 when smoothing is enabled."
+            "--score-smoothing-samples must be >= 1 when score smoothing is enabled."
         )
 
     device = torch.device(args.device)
@@ -575,6 +625,7 @@ def run(args, forced_noise_type=None):
     save_noisy = []
     saved_count = 0
     stop_after_saved_outputs = args.save_output and args.save_output_limit > 0
+    noise_param_stats = []
 
     pbar = tqdm(loader, desc="Blind Noise2Score eval", total=len(loader))
 
@@ -586,12 +637,14 @@ def run(args, forced_noise_type=None):
         if args.noisy_data is not None:
             x = None
             y = batch_tensor
+            observation_noise_param = None
         else:
             x = batch_tensor
+            observation_noise_param = make_observation_noise_param(args, x)
             y = add_observation_noise(
                 x=x,
                 noise_type=args.noise_type,
-                noise_param=args.noise_param,
+                noise_param=observation_noise_param,
             )
 
         if stop_after_saved_outputs:
@@ -600,8 +653,14 @@ def run(args, forced_noise_type=None):
             y = y[:take]
             if x is not None:
                 x = x[:take]
+            if torch.is_tensor(observation_noise_param):
+                observation_noise_param = observation_noise_param[:take]
 
         batch_size = y.size(0)
+        batch_noise_stats = summarize_noise_param(observation_noise_param)
+        if batch_noise_stats is not None:
+            batch_noise_stats["count"] = batch_size
+            noise_param_stats.append(batch_noise_stats)
         noisy_mse = F.mse_loss(y, x).item() if x is not None else None
         if x is not None:
             noisy_mse_sum += noisy_mse * batch_size
@@ -670,6 +729,14 @@ def run(args, forced_noise_type=None):
 
     has_clean = args.noisy_data is None
     noisy_mse = noisy_mse_sum / total_count if has_clean else None
+    sampled_noise_summary = None
+    if noise_param_stats:
+        count = sum(item["count"] for item in noise_param_stats)
+        sampled_noise_summary = {
+            "min": min(item["min"] for item in noise_param_stats),
+            "max": max(item["max"] for item in noise_param_stats),
+            "mean": sum(item["mean"] * item["count"] for item in noise_param_stats) / max(count, 1),
+        }
 
     candidate_history = []
     for idx, candidate in enumerate(candidate_jobs):
@@ -715,6 +782,13 @@ def run(args, forced_noise_type=None):
         # synthetic eval에서 실제로 넣은 노이즈.
         # 실제 blind 상황에서는 알 수 없는 값이지만, 여기서는 평가용으로 기록.
         "true_noise_param_for_eval": args.noise_param,
+        "true_noise_param_min_for_eval": args.noise_param_min,
+        "true_noise_param_max_for_eval": args.noise_param_max,
+        "linear_noise_param_for_eval": args.linear_noise_param,
+        "sampled_true_noise_param_for_eval": sampled_noise_summary,
+        "score_smoothing": args.smoothing,
+        "candidate_score_smoothing": smoothing_list,
+        "score_smoothing_samples": args.smoothing_samples,
         "smoothing": args.smoothing,
         "candidate_smoothing": smoothing_list,
         "smoothing_samples": args.smoothing_samples,
@@ -732,6 +806,7 @@ def run(args, forced_noise_type=None):
         "clean_dtype": clean_dtype,
 
         "estimated_noise_param": best["noise_param"],
+        "estimated_score_smoothing": best["smoothing"],
         "estimated_smoothing": best["smoothing"],
         "estimated_score_sigma": best["score_sigma"],
         "best_quality": best["quality"],
@@ -755,6 +830,10 @@ def run(args, forced_noise_type=None):
     if args.noise_type == "poisson":
         summary["true_poisson_peak_for_eval"] = args.poisson_peak
         summary["true_poisson_lam_for_eval"] = args.poisson_lam
+        summary["true_poisson_peak_min_for_eval"] = args.poisson_peak_min
+        summary["true_poisson_peak_max_for_eval"] = args.poisson_peak_max
+        summary["true_poisson_lam_min_for_eval"] = args.poisson_lam_min
+        summary["true_poisson_lam_max_for_eval"] = args.poisson_lam_max
         summary["estimated_poisson_peak"] = best["noise_param"]
         summary["estimated_poisson_lam"] = 1.0 / float(best["noise_param"])
 

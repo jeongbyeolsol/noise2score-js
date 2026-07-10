@@ -29,6 +29,8 @@ def _add_distribution_args(parser, noise_type):
             dest="candidate_params",
             help="Comma-separated Gaussian sigma candidates for blind runs.",
         )
+        parser.add_argument("--sigma-min", type=float, dest="noise_param_min")
+        parser.add_argument("--sigma-max", type=float, dest="noise_param_max")
         return
 
     if noise_type == "poisson":
@@ -43,6 +45,30 @@ def _add_distribution_args(parser, noise_type):
             type=float,
             dest="poisson_lam",
             help="Poisson lam where peak = 1 / lam.",
+        )
+        parser.add_argument(
+            "--peak-min",
+            type=float,
+            dest="noise_param_min",
+            help="Min Poisson peak for synthetic eval.",
+        )
+        parser.add_argument(
+            "--peak-max",
+            type=float,
+            dest="noise_param_max",
+            help="Max Poisson peak for synthetic eval.",
+        )
+        parser.add_argument(
+            "--lam-min",
+            type=float,
+            dest="poisson_lam_min",
+            help="Min Poisson lam for synthetic eval. Converted to peak range.",
+        )
+        parser.add_argument(
+            "--lam-max",
+            type=float,
+            dest="poisson_lam_max",
+            help="Max Poisson lam for synthetic eval. Converted to peak range.",
         )
         parser.add_argument(
             "--candidate-peaks",
@@ -77,6 +103,8 @@ def _add_distribution_args(parser, noise_type):
             dest="candidate_params",
             help="Comma-separated Gamma alpha candidates for blind runs.",
         )
+        parser.add_argument("--alpha-min", type=float, dest="noise_param_min")
+        parser.add_argument("--alpha-max", type=float, dest="noise_param_max")
 
 
 def _config_aliases(noise_type):
@@ -84,9 +112,13 @@ def _config_aliases(noise_type):
         return {
             "sigma": "noise_param",
             "candidate_sigmas": "candidate_params",
+            "sigma_min": "noise_param_min",
+            "sigma_max": "noise_param_max",
             "gaussian": {
                 "sigma": "noise_param",
                 "candidate_sigmas": "candidate_params",
+                "sigma_min": "noise_param_min",
+                "sigma_max": "noise_param_max",
             },
         }
 
@@ -96,11 +128,19 @@ def _config_aliases(noise_type):
             "lam": "poisson_lam",
             "candidate_peaks": "candidate_params",
             "candidate_lams": "candidate_lams",
+            "peak_min": "noise_param_min",
+            "peak_max": "noise_param_max",
+            "lam_min": "poisson_lam_min",
+            "lam_max": "poisson_lam_max",
             "poisson": {
                 "peak": "poisson_peak",
                 "lam": "poisson_lam",
                 "candidate_peaks": "candidate_params",
                 "candidate_lams": "candidate_lams",
+                "peak_min": "noise_param_min",
+                "peak_max": "noise_param_max",
+                "lam_min": "poisson_lam_min",
+                "lam_max": "poisson_lam_max",
             },
         }
 
@@ -109,10 +149,18 @@ def _config_aliases(noise_type):
             "alpha": "noise_param",
             "concentration": "noise_param",
             "candidate_alphas": "candidate_params",
+            "alpha_min": "noise_param_min",
+            "alpha_max": "noise_param_max",
+            "concentration_min": "noise_param_min",
+            "concentration_max": "noise_param_max",
             "gamma": {
                 "alpha": "noise_param",
                 "concentration": "noise_param",
                 "candidate_alphas": "candidate_params",
+                "alpha_min": "noise_param_min",
+                "alpha_max": "noise_param_max",
+                "concentration_min": "noise_param_min",
+                "concentration_max": "noise_param_max",
             },
         }
 
@@ -127,6 +175,18 @@ def _apply_distribution_aliases(args, noise_type):
                 raise ValueError("Poisson lam must be positive.")
             args.poisson_peak = 1.0 / float(poisson_lam)
             args.noise_param = args.poisson_peak
+
+        lam_min = getattr(args, "poisson_lam_min", None)
+        lam_max = getattr(args, "poisson_lam_max", None)
+        if lam_min is not None or lam_max is not None:
+            if lam_min is None or lam_max is None:
+                raise ValueError("Use both --lam-min and --lam-max for a Poisson lam range.")
+            if lam_min <= 0 or lam_max <= 0:
+                raise ValueError("Poisson lam range values must be positive.")
+            peak_min = 1.0 / float(max(lam_min, lam_max))
+            peak_max = 1.0 / float(min(lam_min, lam_max))
+            args.noise_param_min = peak_min
+            args.noise_param_max = peak_max
 
         candidate_lams = getattr(args, "candidate_lams", None)
         if candidate_lams is not None:

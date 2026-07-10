@@ -42,6 +42,7 @@ SECTION_KEY_MAP = {
         "sigma_min": "ardae_sigma_min",
         "sigma_max": "ardae_sigma_max",
         "linear_sigma": "ardae_linear_sigma",
+        "gaussian_perturbation": "ardae_smoothing",
         "smoothing": "ardae_smoothing",
         "test_max_batches": "ardae_test_max_batches",
         "test_save_samples": "ardae_test_save_samples",
@@ -120,6 +121,12 @@ def _normalize_section(section, values):
     normalized = {}
     for raw_key, value in values.items():
         key = _normalize_key(raw_key)
+        if section == "noise" and key == "score_smoothing":
+            key = "smoothing"
+        elif section == "noise" and key == "score_smoothing_samples":
+            key = "smoothing_samples"
+        elif section == "blind" and key == "candidate_score_smoothing":
+            key = "candidate_smoothing"
         dest = key_map.get(key, key)
         normalized[dest] = value
     return normalized

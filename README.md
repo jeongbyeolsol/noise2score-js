@@ -118,14 +118,15 @@ Config 값은 argparse 기본값으로 들어가며, CLI 인자가 항상 config
   },
   "noise": {
     "noise_type": "poisson",
-    "smoothing": 0.1
+    "score_smoothing": 0.1
   },
   "poisson": {
-    "peak": 50,
-    "candidate_peaks": [50]
+    "lam_min": 0.01,
+    "lam_max": 0.05,
+    "candidate_peaks": [20, 50, 100]
   },
   "blind": {
-    "candidate_smoothing": [0.03, 0.05, 0.075, 0.1, 0.125, 0.15, 0.2],
+    "candidate_score_smoothing": [0.03, 0.05, 0.075, 0.1, 0.125, 0.15, 0.2],
     "score_sigma_mode": "same"
   },
   "output": {
@@ -143,12 +144,12 @@ Config 값은 argparse 기본값으로 들어가며, CLI 인자가 항상 config
 runtime     input_dim, batch_size, device, seed, num_workers
 data        clean_data, noisy_data, data_mode, key, noisy_key
 image       image_shape, patch_size, stride, channels, recursive_images
-noise       noise_type, noise_param, score_sigma, smoothing, smoothing_samples
+noise       noise_type, noise_param, score_sigma, score_smoothing, score_smoothing_samples
 gaussian    sigma, candidate_sigmas
-poisson     peak, lam, candidate_peaks, candidate_lams
+poisson     peak, lam, peak_min/max, lam_min/max, candidate_peaks/lams
 gamma       alpha, concentration, candidate_alphas
-blind       candidate_smoothing, score_sigma_mode, tv_weight, data_weight
-ardae       train/test 및 ARDAE 학습 옵션
+blind       candidate_score_smoothing, score_sigma_mode, tv_weight, data_weight
+ardae       train/test 및 ARDAE 학습 옵션, gaussian_perturbation
 output      output_dir, save_output, stitch_output, copy_info
 checkpoint  checkpoint, noise2score_checkpoint_output
 ```
@@ -220,7 +221,27 @@ lam 0.05 -> peak 20
 --lam 0.02
 ```
 
-## Score Sigma와 Smoothing
+Synthetic evaluation에서 이미지/샘플마다 다른 Poisson noise를 넣고 싶으면 range를 사용합니다.
+
+```bash
+--peak-min 20 \
+--peak-max 100
+```
+
+또는 과제식의 `lam` 범위로 줄 수 있습니다.
+
+```bash
+--lam-min 0.01 \
+--lam-max 0.05
+```
+
+내부적으로는 `peak = 1 / lam`으로 변환되어 `peak 20~100` 범위에서 샘플링됩니다. 기본 샘플링은 ARDAE 학습에서 쓰는 `make_noise_param`을 재사용하므로 log-scale입니다. 선형 Uniform 샘플링을 원하면 다음 옵션을 추가합니다.
+
+```bash
+--linear-noise-param
+```
+
+## Score Sigma와 Score Smoothing
 
 `score_sigma`는 ARDAE에 score를 물어볼 때 쓰는 query noise level입니다.
 
@@ -241,21 +262,21 @@ python ./scripts/run_noise2score_poisson.py \
   --peak 50
 ```
 
-Gaussian-smoothed non-Gaussian Noise2Score에서는 `smoothing`이 denoising scale입니다.
+Non-Gaussian Noise2Score에서 `score_smoothing`은 score 주변을 Gaussian perturbation으로 Monte Carlo 평균내는 scale입니다.
 
 ```text
-x_hat = y + smoothing^2 * score
+x_hat = y + score_smoothing^2 * score
 ```
 
-이 경우 `score_sigma`는 보통 `smoothing`과 같거나 가까운 값을 씁니다.
+이 경우 `score_sigma`는 보통 `score_smoothing`과 같거나 가까운 값을 씁니다.
 
 ```bash
 --peak 50 \
---smoothing 0.1 \
+--score-smoothing 0.1 \
 --score-sigma 0.1
 ```
 
-Blind smoothing sweep 예시:
+Blind score-smoothing sweep 예시:
 
 ```bash
 python ./scripts/run_noise2score_blind_poisson.py \
@@ -269,13 +290,26 @@ python ./scripts/run_noise2score_blind_poisson.py \
   --channels 3 \
   --peak 50 \
   --candidate-peaks 50 \
-  --candidate-smoothing 0.03,0.05,0.075,0.1,0.125,0.15,0.2 \
+  --candidate-score-smoothing 0.03,0.05,0.075,0.1,0.125,0.15,0.2 \
   --score-sigma-mode same \
   --stitch-output \
   --stitch-format png
 ```
 
-Smoothed Poisson에서는 `candidate_smoothing`이 실제 denoising rule을 많이 좌우합니다.
+Score-smoothed Poisson에서는 `candidate_score_smoothing`이 실제 denoising rule을 많이 좌우합니다.
+
+용어 주의:
+
+```text
+ARDAE gaussian_perturbation
+  학습 때 clean image에 Gaussian noise를 더한다.
+  이미지 blur/kernel smoothing이 아니다.
+
+Noise2Score score_smoothing
+  평가 때 y 주변에 Gaussian perturbation을 여러 번 넣어 score를 평균낸다.
+```
+
+예전 옵션 이름인 `--smoothing`, `--candidate-smoothing`, `--ardae-smoothing`은 호환 alias로 남아 있지만 새 실험에서는 `--score-smoothing`, `--candidate-score-smoothing`, `--ardae-gaussian-perturbation`을 권장합니다.
 
 ## ARDAE Training
 
@@ -300,7 +334,7 @@ Noise2Score 실행 안에서 ARDAE를 같이 학습하려면 config나 CLI에서
     "base_channels": 32,
     "channel_mults": "1,2,4",
     "nonlinearity": "silu",
-    "smoothing": "range",
+    "gaussian_perturbation": "range",
     "sigma_min": 0.03,
     "sigma_max": 0.22
   }
@@ -321,12 +355,12 @@ python ./models/ardae/train_ardae.py \
   --channels 3 \
   --noise-type poisson \
   --poisson-peak 50 \
-  --smoothing \
+  --gaussian-perturbation \
   --sigma-min 0.03 \
   --sigma-max 0.22
 ```
 
-Smoothed ARDAE에서는 `sigma_min/sigma_max`가 Poisson peak가 아니라 Gaussian smoothing sigma 범위입니다.
+`--gaussian-perturbation`으로 학습하는 ARDAE에서는 `sigma_min/sigma_max`가 Poisson peak가 아니라 Gaussian perturbation sigma 범위입니다.
 
 ## Data Modes
 
@@ -414,7 +448,7 @@ python ./scripts/run_noise2score_blind_poisson.py \
   --channels 3 \
   --peak 50 \
   --candidate-peaks 50 \
-  --candidate-smoothing 0.03,0.05,0.075,0.1,0.125,0.15,0.2 \
+  --candidate-score-smoothing 0.03,0.05,0.075,0.1,0.125,0.15,0.2 \
   --score-sigma-mode same \
   --stitch-output \
   --stitch-format png

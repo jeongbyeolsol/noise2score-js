@@ -53,19 +53,55 @@ def normalize_eval_data_modes(args, include_ardae=False):
 def normalize_noise_param_aliases(args):
     if not hasattr(args, "poisson_peak"):
         args.poisson_peak = None
+    if not hasattr(args, "noise_param_min"):
+        args.noise_param_min = None
+    if not hasattr(args, "noise_param_max"):
+        args.noise_param_max = None
+    if not hasattr(args, "linear_noise_param"):
+        args.linear_noise_param = False
 
     if args.poisson_peak is not None:
         if args.noise_type != "poisson":
             raise ValueError("--poisson-peak can only be used with --noise-type poisson.")
         args.noise_param = float(args.poisson_peak)
 
+    if args.noise_param_min is not None or args.noise_param_max is not None:
+        if args.noise_param_min is None:
+            args.noise_param_min = args.noise_param_max
+        if args.noise_param_max is None:
+            args.noise_param_max = args.noise_param_min
+        args.noise_param_min = float(args.noise_param_min)
+        args.noise_param_max = float(args.noise_param_max)
+        if args.noise_param_min <= 0 or args.noise_param_max <= 0:
+            raise ValueError("Observation noise parameter range must be positive.")
+        if args.noise_param_min > args.noise_param_max:
+            args.noise_param_min, args.noise_param_max = (
+                args.noise_param_max,
+                args.noise_param_min,
+            )
+        args.noise_param = 0.5 * (args.noise_param_min + args.noise_param_max)
+
     if args.noise_type == "poisson":
         if args.noise_param <= 0:
             raise ValueError("Poisson peak must be positive.")
         args.poisson_peak = float(args.noise_param)
         args.poisson_lam = 1.0 / float(args.noise_param)
+        if args.noise_param_min is not None:
+            args.poisson_peak_min = float(args.noise_param_min)
+            args.poisson_peak_max = float(args.noise_param_max)
+            args.poisson_lam_min = 1.0 / float(args.poisson_peak_max)
+            args.poisson_lam_max = 1.0 / float(args.poisson_peak_min)
+        else:
+            args.poisson_peak_min = None
+            args.poisson_peak_max = None
+            args.poisson_lam_min = None
+            args.poisson_lam_max = None
     else:
         args.poisson_lam = None
+        args.poisson_peak_min = None
+        args.poisson_peak_max = None
+        args.poisson_lam_min = None
+        args.poisson_lam_max = None
 
 
 def infer_stream_shape(args, ckpt_image_shape=None):

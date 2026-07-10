@@ -11,7 +11,7 @@ SEED="${SEED:-0}"
 
 NOISE="${NOISE:-poisson}"
 POISSON_PEAK="${POISSON_PEAK:-${NOISE_PARAM:-50}}"
-SMOOTHING="${SMOOTHING:-0.1}"
+SCORE_SMOOTHING="${SCORE_SMOOTHING:-${SMOOTHING:-0.1}}"
 SCORE_SIGMA="${SCORE_SIGMA:-0.1}"
 
 SHAPE="${SHAPE:-128}"
@@ -40,8 +40,8 @@ CUDA_VISIBLE_DEVICES="$GPU" "$PYTHON_BIN" ./scripts/run_noise2score.py \
   --noise-type "$NOISE" \
   --poisson-peak "$POISSON_PEAK" \
   --score-sigma "$SCORE_SIGMA" \
-  --smoothing "$SMOOTHING" \
-  --smoothing-samples "${SMOOTHING_SAMPLES:-8}" \
+  --score-smoothing "$SCORE_SMOOTHING" \
+  --score-smoothing-samples "${SCORE_SMOOTHING_SAMPLES:-${SMOOTHING_SAMPLES:-8}}" \
   --output-dir "$OUTPUT_DIR" \
   --stitch-output \
   --stitch-format "${STITCH_FORMAT:-both}" \

@@ -27,6 +27,42 @@ def make_noise_param(x, sigma_min=0.001, sigma_max=0.5, use_log_scale=True):
     )
 
 
+def make_observation_noise_param(args, x):
+    noise_param_min = getattr(args, "noise_param_min", None)
+    noise_param_max = getattr(args, "noise_param_max", None)
+
+    if noise_param_min is None and noise_param_max is None:
+        return getattr(args, "noise_param", None)
+
+    if noise_param_min is None:
+        noise_param_min = noise_param_max
+    if noise_param_max is None:
+        noise_param_max = noise_param_min
+
+    use_log_scale = not getattr(args, "linear_noise_param", False)
+    return make_noise_param(
+        x,
+        sigma_min=float(noise_param_min),
+        sigma_max=float(noise_param_max),
+        use_log_scale=use_log_scale,
+    )
+
+
+def summarize_noise_param(noise_param):
+    if noise_param is None or not torch.is_tensor(noise_param):
+        return None
+
+    values = noise_param.detach().float().cpu().view(-1)
+    if values.numel() == 0:
+        return None
+
+    return {
+        "min": float(values.min().item()),
+        "max": float(values.max().item()),
+        "mean": float(values.mean().item()),
+    }
+
+
 def add_gaussian_noise(input, std):
     std = _view_param(std, input)
     eps = torch.randn_like(input)
